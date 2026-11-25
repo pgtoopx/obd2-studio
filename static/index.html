@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <title>OBD2 Studio — SsangYong Musso 2022</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      backdrop-filter: blur(8px);
+    }
+    .pulse-dot {
+      animation: pulseGlow 1.8s infinite;
+    }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen antialiased pb-12">
+
+  <!-- TOP BAR: CONEXIÓN Y CONTROL DEL DISPOSITIVO -->
+  <header class="sticky top-0 z-30 bg-slate-950/95 border-b border-slate-800 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+        <!-- Identidad + Estado -->
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-lg">🚙</div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white">OBD2 Studio</h1>
+                <span id="connBadge" class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                  <span id="connDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                  <span id="connText">Desconectado</span>
+                </span>
+              </div>
+              <p id="adapterSubtitle" class="text-[11px] text-slate-400 font-mono">SsangYong Musso 2.2 D22DTR • Vgate iCar 2 Wi-Fi</p>
+            </div>
+          </div>
+
+          <!-- Indicador rápido batería en móvil -->
+          <div class="flex items-center gap-2 lg:hidden">
+            <span id="batBadgeMob" class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">-- V</span>
+          </div>
+        </div>
+
+        <!-- Controles de Conexión -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Wi-Fi Quick Connect -->
+          <button onclick="connectWifi()" id="btnWifi" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 flex items-center gap-1.5 transition">
+            <span>📶</span>
+            <span id="wifiBtnLabel">Wi-Fi V-LINK</span>
+          </button>
+
+          <!-- IP / Puerto -->
+          <div class="flex items-center bg-slate-900 border border-slate-700 rounded-lg overflow-hidden text-xs font-mono">
+            <input id="inpIp" type="text" value="192.168.0.10" class="w-28 bg-transparent px-2 py-1.5 text-slate-200 focus:outline-none" title="IP del adaptador OBD2" />
+            <span class="text-slate-600">:</span>
+            <input id="inpPort" type="number" value="35000" class="w-16 bg-transparent px-2 py-1.5 text-slate-200 focus:outline-none" title="Puerto TCP" />
+          </div>
+
+          <!-- Botones Conectar / Demo / Desconectar -->
+          <button onclick="connectOBD('live')" id="btnConnect" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow">
+            Conectar Real
+          </button>
+          <button onclick="connectOBD('demo')" id="btnDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 transition" title="Simula la camioneta calentando para probar los visores">
+            Simulador Demo
+          </button>
+          <button onclick="disconnectOBD()" id="btnDisconnect" class="hidden px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 transition">
+            Desconectar
+          </button>
+
+          <!-- Grabar CSV -->
+          <button onclick="toggleLogging()" id="btnLog" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1.5 transition">
+            <span id="logDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="logLabel">Grabar CSV</span>
+          </button>
+
+          <!-- Métricas barra -->
+          <div class="hidden lg:flex items-center gap-2 ml-1 text-xs font-mono">
+            <span id="batBadge" class="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-bold">-- V</span>
+            <span id="pollBadge" class="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400">-- ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de Alertas de Conexión -->
+      <div id="connAlert" class="hidden mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2"></div>
+
+      <!-- Navegación Principal -->
+      <nav class="flex items-center gap-1.5 mt-3 overflow-x-auto pb-0.5">
+        <button onclick="switchMainTab('post_assembly')" id="nav_post_assembly" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow">
+          🔧 Visor Post-Armado & Fallas
+        </button>
+        <button onclick="switchMainTab('all_sensors')" id="nav_all_sensors" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          📊 Todos los Sensores (<span id="sensorCountBadge">0</span>)
+        </button>
+        <button onclick="switchMainTab('custom_views')" id="nav_custom_views" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          🎛️ Visores Custom (<span id="viewsCountBadge">0</span>)
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-3 sm:px-6 pt-5 space-y-6">
+
+    <!-- ========================================================= -->
+    <!-- TAB 1: VISOR PRINCIPAL POST-ARMADO, FALLAS Y TEMPERATURAS -->
+    <!-- ========================================================= -->
+    <section id="tab_post_assembly" class="space-y-6">
+
+      <!-- 1A. PANEL DE ERRORES (DTCs, MONITORS, FREEZE FRAME) -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🚨</span> Diagnóstico de Errores (DTCs) & Monitores ECU
+            </h2>
+            <p class="text-xs text-slate-400">Verifica sensores desconectados, fugas o códigos tras armar admisión y rellenar coolant.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="scanDTCs()" id="btnScanDTC" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow">
+              🔍 Escanear Fallas Ahora
+            </button>
+            <button onclick="clearDTCs(false)" id="btnClearDTC" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition">
+              🧹 Borrar Fallas (KOEO)
+            </button>
+          </div>
+        </div>
+
+        <div id="dtcContainer" class="mt-4">
+          <div class="text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center">
+            Conecta el adaptador (o usa el Simulador Demo) y presiona <strong>"Escanear Fallas Ahora"</strong> para leer los códigos almacenados, pendientes, permanentes y la Caja Negra (Freeze Frame).
+          </div>
+        </div>
+      </div>
+
+      <!-- 1B. MONITOR CRÍTICO DE REFRIGERANTE Y TEMPERATURAS -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl border-t-2 border-t-amber-500/60">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🌡️</span> Control Térmico & Purgado de Coolant
+            </h2>
+            <p class="text-xs text-slate-400">Vigila el refrigerante (<span class="text-amber-300">termostato ~82-88°C</span>) y temperatura EGR para detectar bolsas de aire.</p>
+          </div>
+          <div id="thermalPhasePill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            Esperando datos...
+          </div>
+        </div>
+
+        <!-- Grid Principal Térmico: Gauge grande Coolant + Curva en vivo + Sub-temperaturas -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <!-- Tarjeta Principal Coolant -->
+          <div id="coolantMainCard" class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Temp. Refrigerante (ECT)</div>
+                <div class="text-[11px] text-slate-500 font-mono">PID 0105 • Alerta &ge; 96°C</div>
+              </div>
+              <span id="coolantStatusTag" class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-400">--</span>
+            </div>
+
+            <div class="my-4 flex items-baseline gap-2">
+              <span id="val_0105" class="text-5xl font-black font-mono text-white">--</span>
+              <span class="text-xl text-slate-400 font-bold">°C</span>
+            </div>
+
+            <!-- Barra térmica con zonas -->
+            <div class="space-y-1.5">
+              <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex relative">
+                <div id="coolantBar" class="h-full bg-sky-400 transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <div class="flex justify-between text-[10px] font-mono text-slate-500">
+                <span>0°C</span>
+                <span class="text-emerald-400">85°C (Óptimo)</span>
+                <span class="text-amber-400">96°C</span>
+                <span class="text-red-400">110°C</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Gráfica en Tiempo Real de Temperaturas (Coolant + EGR + Aceite) -->
+          <div class="lg:col-span-2 bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span class="text-xs font-bold text-slate-300">Evolución Térmica en Tiempo Real</span>
+              <div class="flex items-center gap-3 text-[11px]">
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span> Coolant (0105)</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Gas EGR (016B)</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Aceite (015C)</span>
+              </div>
+            </div>
+            <div class="relative flex-1 min-h-[160px]">
+              <canvas id="thermalChart" class="w-full h-full"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Otras Temperaturas Relevantes -->
+        <div id="thermalMiniGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mt-4"></div>
+      </div>
+
+      <!-- 1C. HERMETICIDAD ADMISIÓN, TURBO, EGR Y NIVELES -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🌀</span> Hermeticidad de Admisión, Turbo, EGR y Niveles
+            </h2>
+            <p class="text-xs text-slate-400">Comprueba fugas en mangueras/juntas, respuesta de EGR, voltaje de carga y nivel de combustible.</p>
+          </div>
+          <div id="boostDeltaPill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            Boost Neto: -- bar
+          </div>
+        </div>
+
+        <div id="intakeLevelsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"></div>
+      </div>
+
+      <!-- 1D. CHECKLIST INTERACTIVO DE PURGADO Y POST-ARMADO -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>✅</span> Checklist Post-Armado & Purgado (Musso 2.2)
+            </h2>
+            <p class="text-xs text-slate-400">Se guarda automáticamente en tu navegador para ir marcando durante la revisión física.</p>
+          </div>
+          <button onclick="resetChecklist()" class="text-xs text-slate-400 hover:text-white underline">Reiniciar</button>
+        </div>
+        <div id="checklistGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs sm:text-sm"></div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- TAB 2: EXPLORADOR DE TODOS LOS SENSORES SOPORTADOS        -->
+    <!-- ========================================================= -->
+    <section id="tab_all_sensors" class="hidden space-y-4">
+      <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">Explorador Completo de Sensores OBD-II</h2>
+          <p class="text-xs text-slate-400">Consulta todos los PIDs disponibles en la ECU o agrégalos a tus visores personalizados.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input id="sensorSearch" oninput="renderAllSensors()" type="text" placeholder="Buscar sensor (ej. coolant, EGR, volt)..." class="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500 w-56" />
+          <button onclick="scanAllSensors()" id="btnScanAll" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition">
+            ⚡ Barrido Completo (Leer Todos)
+          </button>
+        </div>
+      </div>
+
+      <!-- Filtro de categorías -->
+      <div id="categoryPills" class="flex flex-wrap gap-2"></div>
+
+      <!-- Grid de todos los sensores -->
+      <div id="allSensorsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- ========================================================= -->
+    <!-- TAB 3: CONSTRUCTOR Y VISUALIZADOR DE VISORES CUSTOM       -->
+    <!-- ========================================================= -->
+    <section id="tab_custom_views" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">🎛️ Mis Visores Personalizados</h2>
+          <p class="text-xs text-slate-400">Crea tableros a medida combinando tarjetas numéricas, barras y gráficas en vivo.</p>
+        </div>
+        <button onclick="openViewBuilder(null)" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow">
+          + Nuevo Visor Custom
+        </button>
+      </div>
+
+      <!-- Lista de visores guardados -->
+      <div id="customViewTabs" class="flex flex-wrap items-center gap-2"></div>
+
+      <!-- Cabecera del visor activo -->
+      <div id="activeCustomViewHeader" class="hidden glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 id="cvTitle" class="text-lg font-bold text-white"></h3>
+          <p id="cvDesc" class="text-xs text-slate-400"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="editActiveCustomView()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+            ✏️ Editar Sensores
+          </button>
+          <button onclick="deleteActiveCustomView()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30">
+            🗑️ Eliminar
+          </button>
+        </div>
+      </div>
+
+      <!-- Widgets del visor custom activo -->
+      <div id="customViewWidgets" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+  </main>
+
+  <!-- MODAL CONSTRUCTOR DE VISOR CUSTOM -->
+  <div id="builderModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h3 id="builderModalTitle" class="text-base font-bold text-white">Crear Visor Custom</h3>
+        <button onclick="closeViewBuilder()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-4 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-slate-400 mb-1 font-semibold">Ícono</label>
+            <select id="vbIcon" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+              <option value="🌡️">🌡️ Térmico</option>
+              <option value="🌀">🌀 Turbo</option>
+              <option value="🚗">🚗 Ruta</option>
+              <option value="🛡️">🛡️ DPF</option>
+              <option value="🔋">🔋 Eléctrico</option>
+              <option value="⚙️">⚙️ Motor</option>
+            </select>
+          </div>
+          <div class="sm:col-span-3">
+            <label class="block text-slate-400 mb-1 font-semibold">Nombre del Visor</label>
+            <input id="vbName" type="text" placeholder="Ej: Prueba en Carretera Turbo + Coolant" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-slate-400 mb-1 font-semibold">Descripción breve</label>
+          <input id="vbDesc" type="text" placeholder="Ej: Monitoreo de temperatura y presión durante prueba dinámica" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-slate-300 font-bold">Selecciona los Sensores y Tipo de Widget</label>
+            <input id="vbFilter" oninput="renderBuilderSensorList()" type="text" placeholder="Filtrar..." class="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-white w-36" />
+          </div>
+          <div id="vbSensorList" class="space-y-1.5 max-h-64 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <div class="px-5 py-3.5 border-t border-slate-800 flex justify-end gap-2">
+        <button onclick="closeViewBuilder()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 hover:bg-slate-700">Cancelar</button>
+        <button onclick="saveViewFromBuilder()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-slate-950 hover:bg-emerald-400">Guardar Visor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AGREGAR RÁPIDO A VISOR -->
+  <div id="quickAddModal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-white">Agregar Sensor a Visor Custom</h3>
+        <button onclick="document.getElementById('quickAddModal').classList.add('hidden')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <div id="quickAddSensorName" class="text-xs text-sky-400 font-mono"></div>
+      <div class="space-y-2 text-xs">
+        <label class="block text-slate-400">Elige el visor destino:</label>
+        <select id="quickAddViewSelect" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"></select>
+        <label class="block text-slate-400 mt-2">Tipo de visualización:</label>
+        <select id="quickAddWidgetType" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+          <option value="gauge">Barra / Gauge con alertas</option>
+          <option value="chart">Gráfica en Tiempo Real</option>
+          <option value="card">Tarjeta Numérica Simple</option>
+        </select>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="document.getElementById('quickAddModal').classList.add('hidden')" class="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300">Cancelar</button>
+        <button onclick="confirmQuickAdd()" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================
+    // ESTADO GLOBAL DE LA APLICACIÓN
+    // =========================================================
+    let catalog = [];
+    let catalogMap = {};
+    let categories = [];
+    let supportedIds = [];
+    let customViews = [];
+    let activeTab = 'post_assembly';
+    let activeCategoryFilter = 'all';
+    let activeCustomViewId = null;
+    let latestTelemetry = {};
+    let historyTelemetry = {};
+    let obdStatus = { mode: 'disconnected' };
+    let editingViewId = null;
+    let builderSelections = {}; // { sensor_id: widgetType }
+    let quickAddTargetSensor = null;
+
+    const POST_ASSEMBLY_WATCH_IDS = [
+      '0105', '0167', '015C', '016B', '010F', '0177', '0146',
+      '010B', '0133', '0170_CMD', '0170_ACT', '0171',
+      '0110', '012C', '012D', '0111', '010C', '0123', '0149',
+      'ATRV', '0142', '012F', '011F', '017A'
+    ];
+
+    const CHECKLIST_ITEMS = [
+      { id: 'c1', text: 'Nivel de refrigerante en vaso expansor (en frío entre MIN y MAX)' },
+      { id: 'c2', text: 'Calefacción de cabina abierta al máximo durante el purgado inicial' },
+      { id: 'c3', text: 'Verificar apertura de termostato (~82-88°C) y manguera inferior caliente' },
+      { id: 'c4', text: 'Comprobar que no haya burbujas ni pérdida de coolant en enfriador EGR' },
+      { id: 'c5', text: 'Revisar ajuste de todas las abrazaderas de admisión e intercooler' },
+      { id: 'c6', text: 'Confirmar presión MAP = Barométrica (~100 kPa) antes de dar arranque' },
+      { id: 'c7', text: 'Verificar conectores firmes: MAP, MAF, EGR, Mariposa y sensor ECT' },
+      { id: 'c8', text: 'Revisar nivel de aceite en varilla y ausencia de fugas tras calentar' },
+    ];
+
+    // =========================================================
+    // INICIALIZACIÓN
+    // =========================================================
+    async function init() {
+      await loadCatalog();
+      await loadCustomViews();
+      renderPostAssemblySkeleton();
+      renderChecklist();
+      await refreshStatus();
+      setInterval(pollLoop, 600);
+      setInterval(refreshStatus, 4000);
+    }
+
+    async function api(url, opts = {}) {
+      const res = await fetch(url, {
+        headers: { 'Content-Type': 'application/json' },
+        ...opts,
+      });
+      return res.json();
+    }
+
+    async function loadCatalog() {
+      const res = await api('/api/pids');
+      catalog = res.sensors || [];
+      categories = res.categories || [];
+      supportedIds = res.supported_ids || [];
+      catalogMap = {};
+      catalog.forEach(s => catalogMap[s.id] = s);
+      document.getElementById('sensorCountBadge').innerText = supportedIds.length;
+      renderCategoryPills();
+      renderAllSensors();
+    }
+
+    async function loadCustomViews() {
+      const res = await api('/api/views');
+      customViews = res.views || [];
+      document.getElementById('viewsCountBadge').innerText = customViews.length;
+      if (customViews.length && !activeCustomViewId) {
+        activeCustomViewId = customViews[0].id;
+      }
+      renderCustomViewTabs();
+    }
+
+    // =========================================================
+    // CONEXIÓN WI-FI Y DISPOSITIVO OBD-II
+    // =========================================================
+    async function refreshStatus() {
+      try {
+        const res = await api('/api/status');
+        obdStatus = res.obd;
+        updateConnectionUI(res.obd, res.wifi);
+      } catch (e) {}
+    }
+
+    function updateConnectionUI(obd, wifi) {
+      const badge = document.getElementById('connBadge');
+      const dot = document.getElementById('connDot');
+      const txt = document.getElementById('connText');
+      const btnConn = document.getElementById('btnConnect');
+      const btnDemo = document.getElementById('btnDemo');
+      const btnDisc = document.getElementById('btnDisconnect');
+      const sub = document.getElementById('adapterSubtitle');
+
+      if (obd.mode === 'live') {
+        badge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+        dot.className = "w-2 h-2 rounded-full bg-emerald-400 pulse-dot";
+        txt.innerText = "Conectado LIVE";
+        btnConn.classList.add('hidden');
+        btnDemo.classList.add('hidden');
+        btnDisc.classList.remove('hidden');
+        sub.innerText = `${obd.adapter_version || 'ELM327'} • ${obd.protocol || ''}`;
+      } else if (obd.mode === 'demo') {
+        badge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40";
+        dot.className = "w-2 h-2 rounded-full bg-sky-400 pulse-dot";
+        txt.innerText = "Modo Simulador";
+        btnConn.classList.add('hidden');
+        btnDemo.classList.add('hidden');
+        btnDisc.classList.remove('hidden');
+        sub.innerText = obd.adapter_version || "Simulador Musso 2.2";
+      } else {
+        badge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700";
+        dot.className = "w-2 h-2 rounded-full bg-slate-500";
+        txt.innerText = "Desconectado";
+        btnConn.classList.remove('hidden');
+        btnDemo.classList.remove('hidden');
+        btnDisc.classList.add('hidden');
+        sub.innerText = "SsangYong Musso 2.2 D22DTR • Vgate iCar 2 Wi-Fi";
+      }
+
+      // Wi-Fi button indicator
+      const wifiLbl = document.getElementById('wifiBtnLabel');
+      const btnWifi = document.getElementById('btnWifi');
+      if (wifi && wifi.connected && wifi.ssid && wifi.ssid.toUpperCase() === 'V-LINK') {
+        wifiLbl.innerText = `V-LINK (${wifi.signal || 'OK'})`;
+        btnWifi.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5";
+      } else if (wifi && wifi.vlink_visible) {
+        wifiLbl.innerText = "Conectar V-LINK";
+        btnWifi.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-950/50 hover:bg-amber-900/50 border border-amber-500/40 text-amber-300 flex items-center gap-1.5";
+      } else {
+        wifiLbl.innerText = wifi && wifi.connected ? `Wi-Fi: ${wifi.ssid}` : "Wi-Fi: V-LINK";
+        btnWifi.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1.5";
+      }
+
+      // Batería & Latencia
+      const vStr = obd.battery_voltage ? `${obd.battery_voltage.toFixed(1)} V` : "-- V";
+      document.getElementById('batBadge').innerText = vStr;
+      document.getElementById('batBadgeMob').innerText = vStr;
+      document.getElementById('pollBadge').innerText = obd.last_poll_ms ? `${obd.last_poll_ms} ms` : "-- ms";
+
+      // Grabar CSV
+      const logDot = document.getElementById('logDot');
+      const logLabel = document.getElementById('logLabel');
+      if (obd.logging) {
+        logDot.className = "w-2 h-2 rounded-full bg-red-500 pulse-dot";
+        logLabel.innerText = `Grabando (${obd.log_path || 'CSV'})`;
+      } else {
+        logDot.className = "w-2 h-2 rounded-full bg-slate-500";
+        logLabel.innerText = "Grabar CSV";
+      }
+
+      if (obd.last_error && obd.mode === 'disconnected') {
+        showConnAlert(obd.last_error, 'error');
+      }
+    }
+
+    function showConnAlert(msg, type = 'info') {
+      const el = document.getElementById('connAlert');
+      el.classList.remove('hidden');
+      if (type === 'error') {
+        el.className = "mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 bg-red-950/60 border border-red-500/40 text-red-200";
+      } else if (type === 'success') {
+        el.className = "mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 bg-emerald-950/60 border border-emerald-500/40 text-emerald-200";
+      } else {
+        el.className = "mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 bg-sky-950/60 border border-sky-500/40 text-sky-200";
+      }
+      el.innerHTML = `<span>${msg}</span><button onclick="this.parentElement.classList.add('hidden')" class="font-bold opacity-70 hover:opacity-100">&times;</button>`;
+    }
+
+    async function connectWifi() {
+      showConnAlert("Conectando interfaz Wi-Fi de Windows a red V-LINK...", "info");
+      const res = await api('/api/wifi/connect', { method: 'POST', body: JSON.stringify({ ssid: 'V-LINK' }) });
+      if (res.ok) {
+        showConnAlert("Solicitud enviada a V-LINK. Verifica que el iCar 2 esté encendido (LEDs activos).", "success");
+      } else {
+        showConnAlert("No se pudo conectar a V-LINK: " + res.message, "error");
+      }
+      refreshStatus();
+    }
+
+    async function connectOBD(mode) {
+      const ip = document.getElementById('inpIp').value.trim() || '192.168.0.10';
+      const port = parseInt(document.getElementById('inpPort').value, 10) || 35000;
+      showConnAlert(mode === 'demo' ? "Iniciando simulador SsangYong Musso 2.2..." : `Conectando al adaptador ${ip}:${port}...`, "info");
+
+      const res = await api('/api/connect', {
+        method: 'POST',
+        body: JSON.stringify({ ip, port, mode }),
+      });
+
+      if (res.ok) {
+        showConnAlert(res.message, "success");
+        await loadCatalog();
+        await syncWatchListForActiveTab();
+        await scanDTCs();
+      } else {
+        showConnAlert(res.message, "error");
+      }
+      refreshStatus();
+    }
+
+    async function disconnectOBD() {
+      await api('/api/disconnect', { method: 'POST', body: JSON.stringify({}) });
+      showConnAlert("Sesión OBD-II cerrada.", "info");
+      refreshStatus();
+    }
+
+    async function toggleLogging() {
+      if (obdStatus.logging) {
+        const res = await api('/api/log/stop', { method: 'POST', body: JSON.stringify({}) });
+        showConnAlert(`Grabación guardada en logs/${res.file}`, 'success');
+      } else {
+        const res = await api('/api/log/start', { method: 'POST', body: JSON.stringify({}) });
+        showConnAlert(`Grabando telemetría en logs/${res.file}`, 'info');
+      }
+      refreshStatus();
+    }
+
+    // =========================================================
+    // NAVEGACIÓN Y WATCHLIST DINÁMICA
+    // =========================================================
+    async function switchMainTab(tab) {
+      activeTab = tab;
+      ['post_assembly', 'all_sensors', 'custom_views'].forEach(t => {
+        document.getElementById(`tab_${t}`).classList.toggle('hidden', t !== tab);
+        const btn = document.getElementById(`nav_${t}`);
+        if (t === tab) {
+          btn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow";
+        } else {
+          btn.className = "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60";
+        }
+      });
+
+      if (tab === 'custom_views') {
+        renderActiveCustomView();
+      }
+      await syncWatchListForActiveTab();
+    }
+
+    async function syncWatchListForActiveTab() {
+      let ids = [];
+      if (activeTab === 'post_assembly') {
+        ids = POST_ASSEMBLY_WATCH_IDS;
+      } else if (activeTab === 'custom_views') {
+        const view = customViews.find(v => v.id === activeCustomViewId);
+        if (view) {
+          ids = view.widgets.map(w => w.sensor_id);
+        }
+      } else if (activeTab === 'all_sensors') {
+        // Monitorear en vivo la categoría filtrada (o los primeros 18) para mantener alta velocidad
+        const visible = getFilteredCatalog().slice(0, 18).map(s => s.id);
+        ids = visible;
+      }
+      if (ids.length) {
+        await api('/api/watch', { method: 'POST', body: JSON.stringify({ ids }) });
+      }
+    }
+
+    // =========================================================
+    // POLLING EN TIEMPO REAL
+    // =========================================================
+    async function pollLoop() {
+      if (obdStatus.mode === 'disconnected') return;
+      try {
+        const res = await api('/api/telemetry');
+        latestTelemetry = res.latest || {};
+        historyTelemetry = res.history || {};
+        if (res.status) {
+          obdStatus = res.status;
+          document.getElementById('pollBadge').innerText = res.status.last_poll_ms ? `${res.status.last_poll_ms} ms` : "-- ms";
+          if (res.status.battery_voltage) {
+            const vStr = `${res.status.battery_voltage.toFixed(1)} V`;
+            document.getElementById('batBadge').innerText = vStr;
+            document.getElementById('batBadgeMob').innerText = vStr;
+          }
+        }
+
+        if (activeTab === 'post_assembly') {
+          updatePostAssemblyUI();
+        } else if (activeTab === 'all_sensors') {
+          updateAllSensorsValues();
+        } else if (activeTab === 'custom_views') {
+          updateCustomViewValues();
+        }
+      } catch (e) {}
+    }
+
+    // =========================================================
+    // TAB 1: VISOR POST-ARMADO (FALLAS, COOLANT, ADMISIÓN)
+    // =========================================================
+    async function scanDTCs() {
+      const container = document.getElementById('dtcContainer');
+      container.innerHTML = `<div class="text-xs text-sky-300 p-4 text-center">Consultando ECU (Modos 0101, 03, 07, 0A y Freeze Frame 02)...</div>`;
+      const res = await api('/api/dtcs');
+      if (!res.ok) {
+        container.innerHTML = `<div class="text-xs text-red-300 bg-red-950/40 border border-red-500/30 rounded-xl p-4">${res.error}</div>`;
+        return;
+      }
+
+      const milBadge = res.mil_on
+        ? `<span class="px-2.5 py-1 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300 font-bold text-xs">⚠️ Check Engine (MIL): ENCENDIDO</span>`
+        : `<span class="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-xs">✅ Check Engine (MIL): APAGADO</span>`;
+
+      const renderList = (title, items, badgeClass) => {
+        if (!items || !items.length) {
+          return `
+            <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-3">
+              <div class="text-xs font-bold text-slate-300 mb-1">${title}</div>
+              <div class="text-xs text-emerald-400">Sin códigos detectados (Limpio)</div>
+            </div>`;
+        }
+        return `
+          <div class="bg-slate-950/60 border border-red-500/30 rounded-xl p-3 space-y-2">
+            <div class="text-xs font-bold text-red-300">${title} (${items.length})</div>
+            ${items.map(c => `
+              <div class="p-2 rounded-lg bg-slate-900 border border-slate-800">
+                <span class="px-1.5 py-0.5 rounded text-xs font-mono font-black ${badgeClass}">${c.code}</span>
+                <p class="text-xs text-slate-300 mt-1">${c.description}</p>
+              </div>`).join('')}
+          </div>`;
+      };
+
+      let monitorsHtml = '';
+      if (res.monitors && Object.keys(res.monitors).length) {
+        monitorsHtml = `
+          <div class="mt-3 flex flex-wrap gap-2">
+            ${Object.entries(res.monitors).map(([k, v]) => `
+              <span class="px-2.5 py-1 rounded-lg text-[11px] font-mono border ${v === 'OK' ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300' : 'bg-amber-950/40 border-amber-500/30 text-amber-300'}">
+                ${k.toUpperCase()}: ${v}
+              </span>`).join('')}
+          </div>`;
+      }
+
+      let ffHtml = '';
+      if (res.freeze_frame) {
+        ffHtml = `
+          <div class="mt-3 bg-amber-950/20 border border-amber-500/30 rounded-xl p-3">
+            <div class="text-xs font-bold text-amber-300 mb-2">📦 Caja Negra (Freeze Frame - DTC: ${res.freeze_frame.dtc})</div>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+              ${Object.entries(res.freeze_frame.params || {}).map(([k, v]) => `
+                <div class="bg-slate-950/80 p-2 rounded-lg border border-slate-800">
+                  <div class="text-[10px] text-slate-400">${k}</div>
+                  <div class="font-bold font-mono text-white">${v}</div>
+                </div>`).join('')}
+            </div>
+          </div>`;
+      }
+
+      container.innerHTML = `
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+          ${milBadge}
+          ${res.note ? `<span class="text-xs text-sky-300">${res.note}</span>` : ''}
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+          ${renderList('Confirmados (Modo 03)', res.confirmed, 'bg-red-500/20 text-red-300')}
+          ${renderList('Pendientes Ciclo Actual (Modo 07)', res.pending, 'bg-amber-500/20 text-amber-300')}
+          ${renderList('Permanentes (Modo 0A)', res.permanent, 'bg-purple-500/20 text-purple-300')}
+        </div>
+        ${monitorsHtml}
+        ${ffHtml}
+      `;
+    }
+
+    async function clearDTCs(force) {
+      const res = await api('/api/dtcs/clear', {
+        method: 'POST',
+        body: JSON.stringify({ force }),
+      });
+      if (res.ok) {
+        showConnAlert(res.message, 'success');
+        await scanDTCs();
+      } else if (res.koeo_warning) {
+        showConnAlert(res.error, 'error');
+      } else {
+        showConnAlert(res.error || 'Error al borrar códigos', 'error');
+      }
+    }
+
+    function renderPostAssemblySkeleton() {
+      const thermalMinis = ['0167', '015C', '016B', '010F', '0177', '0146'];
+      document.getElementById('thermalMiniGrid').innerHTML = thermalMinis.map(id => {
+        const s = catalogMap[id] || { id, short: id, unit: '°C' };
+        return `
+          <div id="pa_card_${id}" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+            <div class="text-[11px] text-slate-400 truncate" title="${s.name || ''}">${s.short}</div>
+            <div class="mt-1 flex items-baseline gap-1">
+              <span id="pa_val_${id}" class="text-xl font-black font-mono text-white">--</span>
+              <span class="text-xs text-slate-400">${s.unit}</span>
+            </div>
+          </div>`;
+      }).join('');
+
+      const intakeAndLevels = [
+        '010B', '0133', '0170_CMD', '0170_ACT', '0171',
+        '0110', '012C', '012D', '0111', '010C',
+        '0123', '0149', 'ATRV', '0142', '012F', '011F', '017A'
+      ];
+      document.getElementById('intakeLevelsGrid').innerHTML = intakeAndLevels.map(id => {
+        const s = catalogMap[id] || { id, short: id, unit: '' };
+        return `
+          <div id="pa_card_${id}" class="bg-slate-950/70 border border-slate-800 rounded-xl p-3 transition-colors">
+            <div class="flex justify-between items-center gap-1">
+              <span class="text-[11px] text-slate-400 font-medium truncate" title="${s.description || ''}">${s.short}</span>
+              <span class="text-[10px] font-mono text-slate-600">${s.pid}</span>
+            </div>
+            <div class="mt-1 flex items-baseline gap-1">
+              <span id="pa_val_${id}" class="text-xl font-black font-mono text-white">--</span>
+              <span class="text-xs text-slate-400">${s.unit}</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function updatePostAssemblyUI() {
+      // Actualizar Coolant principal (0105)
+      const ect = latestTelemetry['0105'];
+      if (ect) {
+        const v = ect.value;
+        document.getElementById('val_0105').innerText = v;
+        const pct = Math.min(100, Math.max(0, (v / 115) * 100));
+        const bar = document.getElementById('coolantBar');
+        const tag = document.getElementById('coolantStatusTag');
+        const phase = document.getElementById('thermalPhasePill');
+        const card = document.getElementById('coolantMainCard');
+        bar.style.width = `${pct}%`;
+
+        if (v >= 103) {
+          bar.className = "h-full bg-red-500 transition-all duration-300";
+          tag.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-red-500/20 text-red-300";
+          tag.innerText = "CRÍTICO";
+          phase.className = "px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40";
+          phase.innerText = "🔥 ALERTA SOBRETEMPERATURA — Revisar aire o electroventilador";
+          card.className = "bg-red-950/30 border border-red-500 rounded-2xl p-4 flex flex-col justify-between";
+        } else if (v >= 96) {
+          bar.className = "h-full bg-amber-400 transition-all duration-300";
+          tag.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300";
+          tag.innerText = "ALTO";
+          phase.className = "px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
+          phase.innerText = "⚠️ Vigilancia Térmica (>96°C)";
+          card.className = "bg-amber-950/20 border border-amber-500/60 rounded-2xl p-4 flex flex-col justify-between";
+        } else if (v >= 80) {
+          bar.className = "h-full bg-emerald-400 transition-all duration-300";
+          tag.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300";
+          tag.innerText = "ÓPTIMO";
+          phase.className = "px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+          phase.innerText = "✅ Régimen Normal / Termostato Abierto (80-95°C)";
+          card.className = "bg-slate-950/80 border border-emerald-500/30 rounded-2xl p-4 flex flex-col justify-between";
+        } else {
+          bar.className = "h-full bg-sky-400 transition-all duration-300";
+          tag.className = "px-2 py-0.5 rounded text-[11px] font-bold bg-sky-500/20 text-sky-300";
+          tag.innerText = "CALENTANDO";
+          phase.className = "px-3 py-1 rounded-full text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40";
+          phase.innerText = "🌡️ Calentamiento y Purgado (<80°C)";
+          card.className = "bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between";
+        }
+      }
+
+      // Actualizar resto de tarjetas Post-Armado con alertas por umbral
+      POST_ASSEMBLY_WATCH_IDS.forEach(id => {
+        if (id === '0105') return;
+        const valEl = document.getElementById(`pa_val_${id}`);
+        const cardEl = document.getElementById(`pa_card_${id}`);
+        if (!valEl || !cardEl) return;
+        const entry = latestTelemetry[id];
+        if (!entry) return;
+        valEl.innerText = entry.value;
+
+        const meta = catalogMap[id];
+        const status = evaluateAlert(meta, entry.value);
+        if (status === 'crit') {
+          cardEl.className = "bg-red-950/30 border border-red-500/60 rounded-xl p-3";
+          valEl.className = "text-xl font-black font-mono text-red-400";
+        } else if (status === 'warn') {
+          cardEl.className = "bg-amber-950/20 border border-amber-500/50 rounded-xl p-3";
+          valEl.className = "text-xl font-black font-mono text-amber-300";
+        } else {
+          cardEl.className = "bg-slate-950/70 border border-slate-800 rounded-xl p-3";
+          valEl.className = "text-xl font-black font-mono text-white";
+        }
+      });
+
+      // Boost Neto (MAP - Baro)
+      const mapEntry = latestTelemetry['010B'];
+      const baroEntry = latestTelemetry['0133'];
+      if (mapEntry) {
+        const baro = baroEntry ? baroEntry.value : 100;
+        const boostBar = ((mapEntry.value - baro) / 100.0).toFixed(2);
+        document.getElementById('boostDeltaPill').innerText = `Boost Neto: ${boostBar >= 0 ? '+' : ''}${boostBar} bar`;
+      }
+
+      // Dibujar gráfica térmica combinada
+      drawMultiSeriesChart(
+        document.getElementById('thermalChart'),
+        [
+          { id: '0105', color: '#38bdf8', label: 'Coolant' },
+          { id: '016B', color: '#fbbf24', label: 'EGR Temp' },
+          { id: '015C', color: '#34d399', label: 'Aceite' },
+        ]
+      );
+    }
+
+    function evaluateAlert(meta, val) {
+      if (!meta || val === null || val === undefined) return 'ok';
+      if (meta.crit_high !== undefined && meta.crit_high !== null && val >= meta.crit_high) return 'crit';
+      if (meta.crit_low !== undefined && meta.crit_low !== null && val <= meta.crit_low) return 'crit';
+      if (meta.warn_high !== undefined && meta.warn_high !== null && val >= meta.warn_high) return 'warn';
+      if (meta.warn_low !== undefined && meta.warn_low !== null && val <= meta.warn_low) return 'warn';
+      return 'ok';
+    }
+
+    // =========================================================
+    // CHECKLIST INTERACTIVO (PERSISTIDO EN LOCALSTORAGE)
+    // =========================================================
+    function renderChecklist() {
+      const saved = JSON.parse(localStorage.getItem('musso_post_checklist') || '{}');
+      document.getElementById('checklistGrid').innerHTML = CHECKLIST_ITEMS.map(item => {
+        const checked = !!saved[item.id];
+        return `
+          <label class="flex items-start gap-2.5 p-3 rounded-xl border cursor-pointer transition ${checked ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-200' : 'bg-slate-950/60 border-slate-800 text-slate-300 hover:border-slate-700'}">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleCheckItem('${item.id}', this.checked)" class="mt-0.5 accent-emerald-400 w-4 h-4 rounded" />
+            <span class="${checked ? 'line-through opacity-80' : ''}">${item.text}</span>
+          </label>`;
+      }).join('');
+    }
+
+    function toggleCheckItem(id, checked) {
+      const saved = JSON.parse(localStorage.getItem('musso_post_checklist') || '{}');
+      saved[id] = checked;
+      localStorage.setItem('musso_post_checklist', JSON.stringify(saved));
+      renderChecklist();
+    }
+
+    function resetChecklist() {
+      localStorage.removeItem('musso_post_checklist');
+      renderChecklist();
+    }
+
+    // =========================================================
+    // TAB 2: EXPLORADOR DE TODOS LOS SENSORES
+    // =========================================================
+    function renderCategoryPills() {
+      const el = document.getElementById('categoryPills');
+      const pills = [{ id: 'all', name: 'Todos', icon: '📋' }, ...categories];
+      el.innerHTML = pills.map(c => `
+        <button onclick="setCategoryFilter('${c.id}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition ${activeCategoryFilter === c.id ? 'bg-sky-500 text-slate-950' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800'}">
+          ${c.icon} ${c.name}
+        </button>`).join('');
+    }
+
+    async function setCategoryFilter(catId) {
+      activeCategoryFilter = catId;
+      renderCategoryPills();
+      renderAllSensors();
+      await syncWatchListForActiveTab();
+    }
+
+    function getFilteredCatalog() {
+      const q = (document.getElementById('sensorSearch')?.value || '').toLowerCase();
+      return catalog.filter(s => {
+        if (!s.supported) return false;
+        if (activeCategoryFilter !== 'all' && s.category !== activeCategoryFilter) return false;
+        if (q && !s.name.toLowerCase().includes(q) && !s.short.toLowerCase().includes(q) && !s.id.toLowerCase().includes(q)) return false;
+        return true;
+      });
+    }
+
+    function renderAllSensors() {
+      const items = getFilteredCatalog();
+      document.getElementById('allSensorsGrid').innerHTML = items.map(s => {
+        const entry = latestTelemetry[s.id];
+        const valText = entry ? entry.value : '--';
+        const rawText = entry && entry.raw ? `HEX: ${entry.raw}` : `PID ${s.pid}`;
+        return `
+          <div class="glass-card rounded-xl p-4 flex flex-col justify-between gap-2">
+            <div>
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-xs font-bold text-white leading-snug">${s.name}</span>
+                <button onclick="openQuickAdd('${s.id}')" class="shrink-0 px-2 py-0.5 rounded bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 text-[10px] font-bold border border-sky-500/30">
+                  + Visor
+                </button>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1 line-clamp-2">${s.description}</p>
+            </div>
+            <div class="pt-2 border-t border-slate-800/80 flex items-end justify-between">
+              <div class="flex items-baseline gap-1">
+                <span id="all_val_${s.id}" class="text-2xl font-black font-mono text-emerald-400">${valText}</span>
+                <span class="text-xs text-slate-400">${s.unit}</span>
+              </div>
+              <span id="all_raw_${s.id}" class="text-[10px] font-mono text-slate-500">${rawText}</span>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function updateAllSensorsValues() {
+      getFilteredCatalog().forEach(s => {
+        const entry = latestTelemetry[s.id];
+        if (!entry) return;
+        const valEl = document.getElementById(`all_val_${s.id}`);
+        const rawEl = document.getElementById(`all_raw_${s.id}`);
+        if (valEl) valEl.innerText = entry.value;
+        if (rawEl && entry.raw) rawEl.innerText = `HEX: ${entry.raw}`;
+      });
+    }
+
+    async function scanAllSensors() {
+      const btn = document.getElementById('btnScanAll');
+      btn.innerText = "⏳ Leyendo todos...";
+      btn.disabled = true;
+      const res = await api('/api/scan-all');
+      btn.innerText = "⚡ Barrido Completo (Leer Todos)";
+      btn.disabled = false;
+      if (res.ok && res.data) {
+        latestTelemetry = res.data.latest || {};
+        updateAllSensorsValues();
+        showConnAlert(`Barrido completado: ${Object.keys(latestTelemetry).length} sensores leídos.`, 'success');
+      } else {
+        showConnAlert("Conecta el adaptador OBD2 primero para hacer el barrido completo.", 'error');
+      }
+    }
+
+    // =========================================================
+    // TAB 3: VISORES CUSTOM & CONSTRUCTOR DE DASHBOARDS
+    // =========================================================
+    function renderCustomViewTabs() {
+      const el = document.getElementById('customViewTabs');
+      el.innerHTML = customViews.map(v => `
+        <button onclick="selectCustomView('${v.id}')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${v.id === activeCustomViewId ? 'bg-emerald-500 text-slate-950 shadow' : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800'}">
+          <span>${v.icon || '🎛️'}</span>
+          <span>${v.name}</span>
+          <span class="opacity-70 font-mono text-[10px]">(${v.widgets.length})</span>
+        </button>`).join('');
+      if (activeTab === 'custom_views') renderActiveCustomView();
+    }
+
+    async function selectCustomView(id) {
+      activeCustomViewId = id;
+      renderCustomViewTabs();
+      await syncWatchListForActiveTab();
+    }
+
+    function renderActiveCustomView() {
+      const view = customViews.find(v => v.id === activeCustomViewId);
+      const header = document.getElementById('activeCustomViewHeader');
+      const container = document.getElementById('customViewWidgets');
+
+      if (!view) {
+        header.classList.add('hidden');
+        container.innerHTML = `<div class="col-span-full text-center text-xs text-slate-400 p-8 glass-card rounded-2xl">No hay visores custom creados. Presiona "+ Nuevo Visor Custom" para armar uno.</div>`;
+        return;
+      }
+
+      header.classList.remove('hidden');
+      document.getElementById('cvTitle').innerText = `${view.icon || ''} ${view.name}`;
+      document.getElementById('cvDesc').innerText = view.description || '';
+
+      container.innerHTML = view.widgets.map((w, idx) => {
+        const meta = catalogMap[w.sensor_id] || { id: w.sensor_id, name: w.sensor_id, unit: '', min: 0, max: 100 };
+        if (w.type === 'chart') {
+          return `
+            <div class="glass-card rounded-2xl p-4 md:col-span-2 flex flex-col justify-between">
+              <div class="flex justify-between items-center mb-2">
+                <div>
+                  <span class="text-xs font-bold text-white">${meta.name}</span>
+                  <span class="text-[10px] font-mono text-slate-500 ml-2">${meta.pid}</span>
+                </div>
+                <div class="flex items-baseline gap-1">
+                  <span id="cv_val_${idx}" class="text-2xl font-black font-mono text-sky-400">--</span>
+                  <span class="text-xs text-slate-400">${meta.unit}</span>
+                </div>
+              </div>
+              <div class="h-36 w-full bg-slate-950/70 rounded-xl p-1 border border-slate-800">
+                <canvas id="cv_canvas_${idx}" class="w-full h-full"></canvas>
+              </div>
+            </div>`;
+        } else if (w.type === 'gauge') {
+          return `
+            <div id="cv_card_${idx}" class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+              <div class="flex justify-between items-start">
+                <span class="text-xs font-bold text-slate-300">${meta.name}</span>
+                <span class="text-[10px] font-mono text-slate-500">${meta.pid}</span>
+              </div>
+              <div class="my-3 flex items-baseline gap-1.5">
+                <span id="cv_val_${idx}" class="text-3xl font-black font-mono text-white">--</span>
+                <span class="text-sm text-slate-400">${meta.unit}</span>
+              </div>
+              <div>
+                <div class="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div id="cv_bar_${idx}" class="h-full bg-emerald-400 transition-all duration-300" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-[10px] font-mono text-slate-500 mt-1">
+                  <span>${meta.min ?? 0}</span>
+                  <span>${meta.max ?? 100} ${meta.unit}</span>
+                </div>
+              </div>
+            </div>`;
+        } else {
+          return `
+            <div id="cv_card_${idx}" class="glass-card rounded-2xl p-4 flex flex-col justify-between">
+              <div class="flex justify-between items-start">
+                <span class="text-xs font-bold text-slate-300">${meta.name}</span>
+                <span class="text-[10px] font-mono text-slate-500">${meta.pid}</span>
+              </div>
+              <div class="mt-3 flex items-baseline gap-1.5">
+                <span id="cv_val_${idx}" class="text-3xl font-black font-mono text-emerald-400">--</span>
+                <span class="text-sm text-slate-400">${meta.unit}</span>
+              </div>
+            </div>`;
+        }
+      }).join('');
+
+      updateCustomViewValues();
+    }
+
+    function updateCustomViewValues() {
+      const view = customViews.find(v => v.id === activeCustomViewId);
+      if (!view) return;
+      view.widgets.forEach((w, idx) => {
+        const meta = catalogMap[w.sensor_id];
+        const entry = latestTelemetry[w.sensor_id];
+        const valEl = document.getElementById(`cv_val_${idx}`);
+        if (valEl && entry) {
+          valEl.innerText = entry.value;
+          const st = evaluateAlert(meta, entry.value);
+          if (st === 'crit') valEl.className = "text-3xl font-black font-mono text-red-400";
+          else if (st === 'warn') valEl.className = "text-3xl font-black font-mono text-amber-300";
+        }
+        if (w.type === 'gauge' && entry && meta) {
+          const bar = document.getElementById(`cv_bar_${idx}`);
+          if (bar) {
+            const min = meta.min ?? 0;
+            const max = meta.max ?? 100;
+            const pct = Math.min(100, Math.max(0, ((entry.value - min) / (max - min)) * 100));
+            bar.style.width = `${pct}%`;
+          }
+        }
+        if (w.type === 'chart') {
+          const cv = document.getElementById(`cv_canvas_${idx}`);
+          if (cv) drawMultiSeriesChart(cv, [{ id: w.sensor_id, color: '#38bdf8', label: meta?.short || '' }]);
+        }
+      });
+    }
+
+    // =========================================================
+    // MODAL CONSTRUCTOR DE VISORES CUSTOM
+    // =========================================================
+    function openViewBuilder(viewToEdit) {
+      editingViewId = viewToEdit ? viewToEdit.id : null;
+      builderSelections = {};
+      if (viewToEdit) {
+        document.getElementById('builderModalTitle').innerText = 'Editar Visor Custom';
+        document.getElementById('vbName').value = viewToEdit.name;
+        document.getElementById('vbDesc').value = viewToEdit.description || '';
+        document.getElementById('vbIcon').value = viewToEdit.icon || '🌡️';
+        viewToEdit.widgets.forEach(w => builderSelections[w.sensor_id] = w.type);
+      } else {
+        document.getElementById('builderModalTitle').innerText = 'Crear Nuevo Visor Custom';
+        document.getElementById('vbName').value = '';
+        document.getElementById('vbDesc').value = '';
+      }
+      document.getElementById('vbFilter').value = '';
+      renderBuilderSensorList();
+      document.getElementById('builderModal').classList.remove('hidden');
+    }
+
+    function editActiveCustomView() {
+      const v = customViews.find(x => x.id === activeCustomViewId);
+      if (v) openViewBuilder(v);
+    }
+
+    function closeViewBuilder() {
+      document.getElementById('builderModal').classList.add('hidden');
+    }
+
+    function renderBuilderSensorList() {
+      const q = (document.getElementById('vbFilter').value || '').toLowerCase();
+      const list = catalog.filter(s => s.supported && (!q || s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)));
+      document.getElementById('vbSensorList').innerHTML = list.map(s => {
+        const selected = !!builderSelections[s.id];
+        const wType = builderSelections[s.id] || 'gauge';
+        return `
+          <div class="flex items-center justify-between gap-2 p-2 rounded-xl border ${selected ? 'bg-sky-950/30 border-sky-500/40' : 'bg-slate-950/60 border-slate-800'}">
+            <label class="flex items-center gap-2 cursor-pointer flex-1">
+              <input type="checkbox" ${selected ? 'checked' : ''} onchange="toggleBuilderSensor('${s.id}', this.checked)" class="accent-sky-400 w-4 h-4" />
+              <div>
+                <div class="text-white font-semibold">${s.name} <span class="text-slate-500 font-mono">(${s.unit})</span></div>
+                <div class="text-[10px] text-slate-400">${s.category} • PID ${s.pid}</div>
+              </div>
+            </label>
+            <select onchange="changeBuilderWidgetType('${s.id}', this.value)" class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-slate-200 text-[11px]" ${selected ? '' : 'disabled'}>
+              <option value="gauge" ${wType === 'gauge' ? 'selected' : ''}>Barra / Gauge</option>
+              <option value="chart" ${wType === 'chart' ? 'selected' : ''}>Gráfica Vivo</option>
+              <option value="card" ${wType === 'card' ? 'selected' : ''}>Tarjeta</option>
+            </select>
+          </div>`;
+      }).join('');
+    }
+
+    function toggleBuilderSensor(id, checked) {
+      if (checked) builderSelections[id] = builderSelections[id] || 'gauge';
+      else delete builderSelections[id];
+      renderBuilderSensorList();
+    }
+
+    function changeBuilderWidgetType(id, type) {
+      if (builderSelections[id]) builderSelections[id] = type;
+    }
+
+    async function saveViewFromBuilder() {
+      const name = document.getElementById('vbName').value.trim();
+      if (!name) {
+        alert('Ingresa un nombre para el visor.');
+        return;
+      }
+      const widgets = Object.entries(builderSelections).map(([sensor_id, type]) => ({ sensor_id, type }));
+      if (!widgets.length) {
+        alert('Selecciona al menos un sensor.');
+        return;
+      }
+
+      const viewObj = {
+        id: editingViewId || ('cv_' + Date.now()),
+        name,
+        icon: document.getElementById('vbIcon').value,
+        description: document.getElementById('vbDesc').value.trim(),
+        widgets,
+      };
+
+      if (editingViewId) {
+        customViews = customViews.map(v => v.id === editingViewId ? viewObj : v);
+      } else {
+        customViews.push(viewObj);
+      }
+
+      await api('/api/views', { method: 'POST', body: JSON.stringify({ views: customViews }) });
+      activeCustomViewId = viewObj.id;
+      document.getElementById('viewsCountBadge').innerText = customViews.length;
+      closeViewBuilder();
+      renderCustomViewTabs();
+      await syncWatchListForActiveTab();
+    }
+
+    async function deleteActiveCustomView() {
+      if (!confirm('¿Eliminar este visor personalizado?')) return;
+      customViews = customViews.filter(v => v.id !== activeCustomViewId);
+      activeCustomViewId = customViews.length ? customViews[0].id : null;
+      await api('/api/views', { method: 'POST', body: JSON.stringify({ views: customViews }) });
+      document.getElementById('viewsCountBadge').innerText = customViews.length;
+      renderCustomViewTabs();
+    }
+
+    // Agregar rápido desde Explorador
+    function openQuickAdd(sensorId) {
+      quickAddTargetSensor = sensorId;
+      const s = catalogMap[sensorId];
+      document.getElementById('quickAddSensorName').innerText = `${s.name} (${s.pid})`;
+      const sel = document.getElementById('quickAddViewSelect');
+      sel.innerHTML = customViews.map(v => `<option value="${v.id}">${v.icon || ''} ${v.name}</option>`).join('');
+      if (!customViews.length) {
+        sel.innerHTML = `<option value="__new__">+ Crear Visor Nuevo</option>`;
+      }
+      document.getElementById('quickAddModal').classList.remove('hidden');
+    }
+
+    async function confirmQuickAdd() {
+      const targetId = document.getElementById('quickAddViewSelect').value;
+      const wType = document.getElementById('quickAddWidgetType').value;
+      if (targetId === '__new__') {
+        customViews.push({
+          id: 'cv_' + Date.now(),
+          name: 'Mi Visor Custom',
+          icon: '🎛️',
+          description: 'Visor creado desde explorador',
+          widgets: [{ sensor_id: quickAddTargetSensor, type: wType }],
+        });
+      } else {
+        const v = customViews.find(x => x.id === targetId);
+        if (v && !v.widgets.some(w => w.sensor_id === quickAddTargetSensor)) {
+          v.widgets.push({ sensor_id: quickAddTargetSensor, type: wType });
+        }
+      }
+      await api('/api/views', { method: 'POST', body: JSON.stringify({ views: customViews }) });
+      document.getElementById('viewsCountBadge').innerText = customViews.length;
+      document.getElementById('quickAddModal').classList.add('hidden');
+      showConnAlert('Sensor agregado al visor custom.', 'success');
+    }
+
+    // =========================================================
+    // MOTOR DE GRÁFICAS CANVAS NATIVO EN TIEMPO REAL
+    // =========================================================
+    function drawMultiSeriesChart(canvas, seriesList) {
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      const w = rect.width;
+      const h = rect.height;
+      ctx.clearRect(0, 0, w, h);
+
+      // Calcular min/max global de las series presentes
+      let allVals = [];
+      seriesList.forEach(s => {
+        const arr = historyTelemetry[s.id] || [];
+        arr.forEach(pt => { if (typeof pt.v === 'number') allVals.push(pt.v); });
+      });
+
+      if (allVals.length < 2) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Esperando muestras en vivo...', w / 2, h / 2);
+        return;
+      }
+
+      let minV = Math.min(...allVals);
+      let maxV = Math.max(...allVals);
+      if (maxV - minV < 5) { minV -= 5; maxV += 5; }
+      else { const pad = (maxV - minV) * 0.12; minV -= pad; maxV += pad; }
+
+      const padL = 36, padR = 10, padT = 10, padB = 18;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+
+      // Grid horizontal
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+      ctx.fillStyle = '#64748b';
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'right';
+      for (let i = 0; i <= 3; i++) {
+        const y = padT + (plotH * i) / 3;
+        const valLbl = (maxV - ((maxV - minV) * i) / 3).toFixed(0);
+        ctx.beginPath();
+        ctx.moveTo(padL, y);
+        ctx.lineTo(w - padR, y);
+        ctx.stroke();
+        ctx.fillText(valLbl, padL - 5, y + 3);
+      }
+
+      // Dibujar curvas
+      seriesList.forEach(s => {
+        const arr = historyTelemetry[s.id] || [];
+        if (arr.length < 2) return;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        arr.forEach((pt, i) => {
+          const x = padL + (i / (arr.length - 1)) * plotW;
+          const y = padT + plotH - ((pt.v - minV) / (maxV - minV)) * plotH;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
