@@ -1,9 +1,10 @@
-const CACHE_NAME = "obd2-studio-v1";
+const CACHE_NAME = "obd2-studio-v2";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
   "./icon.svg",
+  "./downloads/obd2-wifi-bridge.py",
   "./js/obd-core.js",
   "./js/transports.js",
   "./js/app.js",

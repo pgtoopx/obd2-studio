@@ -188,6 +188,21 @@
     return out;
   }
 
+  function parseMode09Ascii(rawStr, pidHex) {
+    if (!rawStr || /NO DATA|ERROR|UNABLE|STOPPED/i.test(rawStr)) return null;
+    const tokens = rawStr.replace(/[\r\n:]/g, " ").trim().split(/\s+/).filter((t) => /^[0-9A-Fa-f]{2}$/.test(t)).map((t) => t.toUpperCase());
+    const idx = tokens.indexOf("49");
+    if (idx === -1 || tokens[idx + 1] !== pidHex.toUpperCase()) return null;
+    // En Mode 09 ISO-TP: 49 <PID> <NDI> <ASCII bytes...>
+    const payload = tokens.slice(idx + 3);
+    let text = "";
+    for (const hx of payload) {
+      const code = parseInt(hx, 16);
+      if (code >= 32 && code <= 126) text += String.fromCharCode(code);
+    }
+    return text.trim() || null;
+  }
+
   global.OBDCore = {
     CATEGORIES,
     SENSOR_CATALOG,
@@ -196,5 +211,6 @@
     decodeDtcPair,
     extractDataBytes,
     parseBitmaskPids,
+    parseMode09Ascii,
   };
 })(window);

@@ -254,12 +254,13 @@ class OBDBridge:
 
                 self.adapter_version = atz.replace("ATZ", "").strip() or "ELM327 Wi-Fi"
                 self.protocol = "ISO 15765-4 CAN (500 kbps)"
-                self.mode = "live"
+                self.mode = mode if mode in ("live", "relay") else "live"
                 self.connected_at = time.time()
 
-                # Descubrir PIDs reales soportados por el vehículo
-                self._discover_supported_pids()
-                self._start_poller()
+                if self.mode == "live":
+                    # Descubrir PIDs reales soportados por el vehículo y arrancar poller interno
+                    self._discover_supported_pids()
+                    self._start_poller()
                 return True, f"Conectado a {self.adapter_version} ({self.ip}:{self.port})"
             except Exception as e:
                 if self.sock:
@@ -681,3 +682,25 @@ class OBDBridge:
                 "latest": dict(self.latest),
                 "history": {k: list(v) for k, v in self.history.items() if k in self.watch_ids},
             }
+
+    def send_raw(self, cmd, delay=0.08):
+        with self.lock:
+            if not self.sock:
+                return {"ok": False, "error": "Adaptador no conectado", "raw": ""}
+            try:
+                res = self._raw_cmd(cmd.strip(), delay=delay)
+                return {"ok": True, "cmd": cmd.strip(), "raw": res}
+            except Exception as e:
+                return {"ok": False, "error": str(e), "raw": ""}
+
+    def send_batch(self, cmds, delay=0.06):
+        with self.lock:
+            if not self.sock:
+                return {"ok": False, "error": "Adaptador no conectado", "results": {}}
+            results = {}
+            try:
+                for c in cmds:
+                    results[c] = self._raw_cmd(c.strip(), delay=delay)
+                return {"ok": True, "results": results}
+            except Exception as e:
+                return {"ok": False, "error": str(e), "results": results}

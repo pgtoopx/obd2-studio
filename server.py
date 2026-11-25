@@ -205,10 +205,23 @@ class StudioHandler(SimpleHTTPRequestHandler):
             p = bridge.stop_log()
             return self._send_json({"ok": True, "file": os.path.basename(p) if p else None})
 
+        if path == "/api/raw":
+            cmd = body.get("cmd", "")
+            delay = float(body.get("delay", 0.08))
+            return self._send_json(bridge.send_raw(cmd, delay=delay))
+
+        if path == "/api/batch":
+            cmds = body.get("cmds", [])
+            delay = float(body.get("delay", 0.06))
+            return self._send_json(bridge.send_batch(cmds, delay=delay))
+
         return self._send_json({"ok": False, "error": "Endpoint no encontrado"}, 404)
 
 
 if __name__ == "__main__":
+    import platform
+    if platform.system().lower() == "windows":
+        ThreadingHTTPServer.allow_reuse_address = False
     port = int(os.environ.get("OBD_WEB_PORT", "8080"))
     server = ThreadingHTTPServer(("0.0.0.0", port), StudioHandler)
     print(f"OBD2 Studio Server corriendo en http://127.0.0.1:{port}", flush=True)

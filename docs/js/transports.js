@@ -203,6 +203,28 @@
         return { ok: false, error: `La ECU respondió '${res || "sin datos"}'. Verificá contacto ON sin marcha.` };
       });
     }
+
+    async readVehicleInfo() {
+      return this._enqueue(async () => {
+        const rawVin = await this.sendAT("0902", 300);
+        const rawCal = await this.sendAT("0904", 250);
+        const rawEcu = await this.sendAT("090A", 250);
+        const rawProto = await this.sendAT("ATDP", 150);
+        return {
+          vin: OBDCore.parseMode09Ascii(rawVin, "02"),
+          cal_id: OBDCore.parseMode09Ascii(rawCal, "04"),
+          ecu_name: OBDCore.parseMode09Ascii(rawEcu, "0A"),
+          protocol: rawProto || this.protocol,
+        };
+      });
+    }
+
+    async sendRaw(cmd) {
+      return this._enqueue(async () => {
+        const raw = await this.sendAT(cmd, 800);
+        return { ok: true, cmd, raw: raw || "(sin respuesta)" };
+      });
+    }
   }
 
   /** Driver 1: Web Bluetooth (BLE) directo desde Chrome/Edge Desktop y Android */
@@ -498,20 +520,32 @@
     async clearDTCs() {
       return { ok: true, message: "Modo Demo: Códigos limpiados correctamente." };
     }
+
+    async readVehicleInfo() {
+      return {
+        vin: "DEMO-MUSSO-2022-D22DTR",
+        cal_id: "DCM62AP-DEMO-CAL",
+        ecu_name: "ECM-Delphi-D22DTR",
+        protocol: "ISO 15765-4 CAN (500 kbps)",
+      };
+    }
+
+    async sendRaw(cmd) {
+      const c = cmd.trim().toUpperCase();
+      if (c === "ATZ") return { ok: true, cmd, raw: "ELM327 v2.1 (Simulador)" };
+      if (c === "ATRV") return { ok: true, cmd, raw: "14.2V" };
+      if (c === "ATDP") return { ok: true, cmd, raw: "AUTO, ISO 15765-4 (CAN 11/500)" };
+      if (c === "0902") return { ok: true, cmd, raw: "49 02 01 44 45 4D 4F 2D 4D 55 53 53 4F" };
+      if (c === "0105") return { ok: true, cmd, raw: "41 05 7C" };
+      return { ok: true, cmd, raw: `SIM OK (${c})` };
+    }
   }
 
-  /** Driver 4: Bridge Local Python (Windows / Linux) para adaptadores Wi-Fi TCP (ej. Vgate iCar 2 Wi-Fi) */
-  class WiFiBridgeTransport {
+  /** Driver 4: Bridge Local Python (Windows / Linux) via /api/raw + /api/batch */
+  class WiFiBridgeTransport extends DirectELMEngine {
     constructor(baseUrl = "http://127.0.0.1:8080") {
+      super();
       this.baseUrl = baseUrl;
-      this.mode = "disconnected";
-      this.latest = {};
-      this.history = {};
-      this.supportedIds = OBDCore.SENSOR_CATALOG.map((s) => s.id);
-      this.adapterVersion = null;
-      this.protocol = null;
-      this.batteryVoltage = null;
-      this.lastPollMs = 0;
     }
 
     async _api(path, opts = {}) {
@@ -526,56 +560,93 @@
       try {
         const res = await this._api("/api/connect", {
           method: "POST",
-          body: JSON.stringify({ ip, port, mode: "live" }),
+          body: JSON.stringify({ ip, port, mode: "relay" }),
         });
         if (res.ok) {
           this.mode = "wifi";
-          this.adapterVersion = res.obd?.adapter_version;
-          this.protocol = res.obd?.protocol;
+          this.adapterVersion = res.obd?.adapter_version || "ELM327 Wi-Fi";
+          this.protocol = res.obd?.protocol || "ISO 15765-4 CAN (Wi-Fi Bridge)";
           this.batteryVoltage = res.obd?.battery_voltage;
-          const pids = await this._api("/api/pids");
-          if (pids.supported_ids) this.supportedIds = pids.supported_ids;
+          await this.discoverPids();
         }
         return res;
       } catch (e) {
         return {
           ok: false,
-          message: "No se detectó el Bridge local en 127.0.0.1:8080. Para usar adaptadores Wi-Fi desde el navegador ejecutá start_windows.bat o start_linux.sh.",
+          message: "No se detectó el Bridge local en 127.0.0.1:8080. Descargá y ejecutá obd2-wifi-bridge.py abajo.",
         };
       }
+    }
+
+    async sendAT(cmd, timeoutMs = 1500) {
+      try {
+        const delay = Math.min(0.4, Math.max(0.05, timeoutMs / 3500));
+        const res = await this._api("/api/raw", {
+          method: "POST",
+          body: JSON.stringify({ cmd, delay }),
+        });
+        if (!res.ok && res.error && /no conectado|not connected/i.test(res.error)) {
+          this.mode = "disconnected";
+        }
+        return res.raw || "";
+      } catch (_) {
+        return "";
+      }
+    }
+
+    async pollIds(targetIds) {
+      return this._enqueue(async () => {
+        const t0 = performance.now();
+        const groups = new Map();
+        for (const id of targetIds) {
+          const meta = OBDCore.CATALOG_BY_ID[id];
+          if (!meta) continue;
+          if (!groups.has(meta.pid)) groups.set(meta.pid, []);
+          groups.get(meta.pid).push(meta);
+        }
+        const cmds = Array.from(groups.keys());
+        if (!cmds.length) return;
+        try {
+          const res = await this._api("/api/batch", {
+            method: "POST",
+            body: JSON.stringify({ cmds, delay: 0.05 }),
+          });
+          if (!res.ok) {
+            if (res.error && /no conectado|not connected/i.test(res.error)) this.mode = "disconnected";
+            return;
+          }
+          const results = res.results || {};
+          for (const [pid, metas] of groups.entries()) {
+            const raw = results[pid] || "";
+            if (pid === "ATRV") {
+              const v = parseFloat(String(raw).replace(/[^0-9.]/g, ""));
+              if (!Number.isNaN(v)) {
+                this.batteryVoltage = v;
+                metas.forEach((m) => this._record(m.id, v, raw));
+              }
+              continue;
+            }
+            const data = OBDCore.extractDataBytes(raw, "41", pid.slice(2));
+            if (!data.length) continue;
+            for (const m of metas) {
+              if (data.length >= m.min_bytes && m.decoder) {
+                const val = m.decoder(data);
+                if (val !== null && val !== undefined && !Number.isNaN(val)) {
+                  this._record(m.id, val, data.join(" "));
+                }
+              }
+            }
+          }
+          this.lastPollMs = Math.round(performance.now() - t0);
+        } catch (_) {
+          this.mode = "disconnected";
+        }
+      });
     }
 
     async disconnect() {
       this.mode = "disconnected";
       try { await this._api("/api/disconnect", { method: "POST", body: "{}" }); } catch (_) {}
-    }
-
-    async setWatch(ids) {
-      try { await this._api("/api/watch", { method: "POST", body: JSON.stringify({ ids }) }); } catch (_) {}
-    }
-
-    async syncTelemetry() {
-      const res = await this._api("/api/telemetry");
-      this.latest = res.latest || {};
-      this.history = res.history || {};
-      if (res.status) {
-        this.batteryVoltage = res.status.battery_voltage;
-        this.lastPollMs = res.status.last_poll_ms;
-        if (res.status.mode === "disconnected") this.mode = "disconnected";
-      }
-      return res;
-    }
-
-    async scanAll() {
-      return this._api("/api/scan-all");
-    }
-
-    async readDTCs() {
-      return this._api("/api/dtcs");
-    }
-
-    async clearDTCs(force = false) {
-      return this._api("/api/dtcs/clear", { method: "POST", body: JSON.stringify({ force }) });
     }
   }
 

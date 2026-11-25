@@ -1,5 +1,5 @@
 /**
- * OBD2 Studio — Main UI Controller (Static PWA + Multi-Transport)
+ * OBD2 Studio — Main UI Controller (Static PWA + Multi-Transport + Min/Max + Terminal + Reporte)
  */
 
 const POST_ASSEMBLY_WATCH_IDS = [
@@ -53,8 +53,8 @@ const DEFAULT_CUSTOM_VIEWS = [
   },
 ];
 
-let activeTransport = null; // null | WebBluetoothTransport | WebSerialTransport | WiFiBridgeTransport | DemoTransport
-let transportType = "disconnected"; // disconnected | ble | serial | wifi | demo
+let activeTransport = null;
+let transportType = "disconnected";
 let activeTab = "post_assembly";
 let activeCategoryFilter = "all";
 let customViews = [];
@@ -66,7 +66,20 @@ let pollTimer = null;
 let isPolling = false;
 let deferredInstallPrompt = null;
 
-// Logger CSV en memoria del navegador (universal Windows/Linux/Android)
+// Min/Max por sensor, Info vehículo y última lectura DTC
+let sessionMinMax = {}; // { id: { min, max } }
+let vehicleInfo = null;
+let lastDtcResult = null;
+
+// Audio alert
+let audioAlertsEnabled = false;
+let lastBeepTs = 0;
+
+// Terminal history
+let termHistory = [];
+let termHistoryIdx = -1;
+
+// Logger CSV
 let isRecordingCsv = false;
 let csvRows = [];
 
@@ -115,16 +128,12 @@ function detectCapabilities() {
 
 async function checkLocalBridgeAvailability() {
   try {
-    const baseUrl = getBridgeUrl();
-    const res = await fetch(`${baseUrl}/api/status`, { method: "GET" });
+    const res = await fetch(`${getBridgeUrl()}/api/status`, { method: "GET" });
     if (res.ok) {
       const data = await res.json();
       updateWifiBadge(data.wifi);
-      document.getElementById("bridgeHint")?.classList.add("hidden");
     }
-  } catch (_) {
-    // No hay bridge local corriendo (normal cuando se abre directo desde GitHub Pages sin adaptador Wi-Fi)
-  }
+  } catch (_) {}
 }
 
 function getBridgeUrl() {
@@ -132,6 +141,24 @@ function getBridgeUrl() {
     return window.location.origin;
   }
   return document.getElementById("inpBridgeUrl")?.value.trim() || "http://127.0.0.1:8080";
+}
+
+function toggleBridgeHelp(forceOpen = null) {
+  const el = document.getElementById("bridgeHelpBox");
+  if (!el) return;
+  if (forceOpen === true) el.classList.remove("hidden");
+  else if (forceOpen === false) el.classList.add("hidden");
+  else el.classList.toggle("hidden");
+}
+
+async function copyCmd(elId) {
+  const txt = document.getElementById(elId)?.innerText || "";
+  try {
+    await navigator.clipboard.writeText(txt);
+    showConnAlert("Comando copiado al portapapeles.", "success");
+  } catch (_) {
+    showConnAlert("Copia el comando manualmente desde el recuadro.", "info");
+  }
 }
 
 function getSupportedIds() {
@@ -148,7 +175,7 @@ function getWatchIdsForActiveTab() {
   if (activeTab === "all_sensors") {
     return getFilteredCatalog().slice(0, 18).map((s) => s.id);
   }
-  return POST_ASSEMBLY_WATCH_IDS;
+  return [];
 }
 
 // =========================================================
@@ -179,13 +206,12 @@ async function connectMode(mode) {
     const t = new OBDTransports.WiFiBridgeTransport(getBridgeUrl());
     const res = await t.connect(ip, port);
     if (!res.ok) {
-      document.getElementById("bridgeHelpBox")?.classList.remove("hidden");
+      toggleBridgeHelp(true);
       return showConnAlert(res.message, "error");
     }
-    document.getElementById("bridgeHelpBox")?.classList.add("hidden");
+    toggleBridgeHelp(false);
     activeTransport = t;
     transportType = "wifi";
-    await t.setWatch(getWatchIdsForActiveTab());
     showConnAlert(res.message || "Conectado por Wi-Fi Bridge", "success");
   } else if (mode === "demo") {
     const t = new OBDTransports.DemoTransport();
@@ -195,11 +221,13 @@ async function connectMode(mode) {
     showConnAlert(res.message, "success");
   }
 
+  resetMinMax();
   updateConnectionHeader();
   document.getElementById("sensorCountBadge").innerText = getSupportedIds().length;
   renderAllSensors();
-  startPolling();
+  await refreshVehicleInfo();
   await scanDTCs();
+  startPolling();
 }
 
 async function disconnectOBD(silent = false) {
@@ -209,13 +237,26 @@ async function disconnectOBD(silent = false) {
     activeTransport = null;
   }
   transportType = "disconnected";
+  vehicleInfo = null;
+  document.getElementById("vehicleInfoBar")?.classList.add("hidden");
   updateConnectionHeader();
   if (!silent) showConnAlert("Sesión OBD-II cerrada.", "info");
 }
 
+async function refreshVehicleInfo() {
+  if (!activeTransport || !activeTransport.readVehicleInfo) return;
+  try {
+    vehicleInfo = await activeTransport.readVehicleInfo();
+    document.getElementById("vInfoVin").innerText = vehicleInfo.vin || "No reportado";
+    document.getElementById("vInfoEcu").innerText = vehicleInfo.ecu_name || "--";
+    document.getElementById("vInfoCal").innerText = vehicleInfo.cal_id || "--";
+    document.getElementById("vehicleInfoBar").classList.remove("hidden");
+  } catch (_) {}
+}
+
 async function connectWifiVLink() {
   try {
-    showConnAlert("Conectando interfaz Wi-Fi del equipo a V-LINK (via Bridge)...", "info");
+    showConnAlert("Conectando interfaz Wi-Fi del equipo a V-LINK...", "info");
     const res = await fetch(`${getBridgeUrl()}/api/wifi/connect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -225,7 +266,8 @@ async function connectWifiVLink() {
     updateWifiBadge(data.wifi);
     showConnAlert(data.ok ? "Solicitud Wi-Fi enviada a V-LINK." : data.message, data.ok ? "success" : "error");
   } catch (_) {
-    showConnAlert("Para conectar el Wi-Fi automáticamente desde la web, iniciá primero el Bridge local (start_windows.bat o start_linux.sh). O conectate manualmente a la red Wi-Fi 'V-LINK'.", "info");
+    toggleBridgeHelp(true);
+    showConnAlert("Descargá y ejecutá obd2-wifi-bridge.py (arriba) para controlar el Wi-Fi desde la web, o conectate manualmente a la red 'V-LINK'.", "info");
   }
 }
 
@@ -235,10 +277,10 @@ function updateWifiBadge(wifi) {
   if (!lbl || !btn || !wifi) return;
   if (wifi.connected && wifi.ssid && wifi.ssid.toUpperCase() === "V-LINK") {
     lbl.innerText = `V-LINK (${wifi.signal || "OK"})`;
-    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center gap-1.5";
+    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 flex items-center gap-1";
   } else if (wifi.vlink_visible) {
     lbl.innerText = "Conectar V-LINK";
-    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-950/50 border border-amber-500/40 text-amber-300 flex items-center gap-1.5";
+    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-950/50 border border-amber-500/40 text-amber-300 flex items-center gap-1";
   }
 }
 
@@ -287,6 +329,59 @@ function showConnAlert(msg, type = "info") {
 }
 
 // =========================================================
+// ALERTAS SONORAS (WEB AUDIO API) & MIN/MAX
+// =========================================================
+function toggleAudioAlert() {
+  audioAlertsEnabled = !audioAlertsEnabled;
+  const btn = document.getElementById("btnAudio");
+  const ico = document.getElementById("audioIcon");
+  if (audioAlertsEnabled) {
+    ico.innerText = "🔔";
+    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 border border-amber-500/40 text-amber-300";
+    playBeep(880, 0.08);
+    showConnAlert("Alarma sonora activada (sonará si Coolant >= 96°C o Batería < 11.8V).", "info");
+  } else {
+    ico.innerText = "🔕";
+    btn.className = "px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300";
+  }
+}
+
+function playBeep(freq = 920, dur = 0.16) {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + dur);
+  } catch (_) {}
+}
+
+function updateMinMaxStats(latest) {
+  for (const [id, entry] of Object.entries(latest)) {
+    const v = entry?.value;
+    if (typeof v !== "number" || Number.isNaN(v)) continue;
+    if (!sessionMinMax[id]) sessionMinMax[id] = { min: v, max: v };
+    else {
+      if (v < sessionMinMax[id].min) sessionMinMax[id].min = v;
+      if (v > sessionMinMax[id].max) sessionMinMax[id].max = v;
+    }
+  }
+}
+
+function resetMinMax() {
+  sessionMinMax = {};
+  if (activeTab === "post_assembly") updatePostAssemblyUI();
+}
+
+// =========================================================
 // POLLING LOOP UNIFICADO
 // =========================================================
 function startPolling() {
@@ -294,19 +389,18 @@ function startPolling() {
   const interval = transportType === "demo" ? 500 : 450;
   pollTimer = setInterval(async () => {
     if (!activeTransport || isPolling || transportType === "disconnected") return;
+    const watchIds = getWatchIdsForActiveTab();
+    if (!watchIds.length) return;
     isPolling = true;
     try {
-      const watchIds = getWatchIdsForActiveTab();
-      if (transportType === "wifi") {
-        await activeTransport.syncTelemetry();
-        if (activeTransport.mode === "disconnected") {
-          await disconnectOBD(true);
-          showConnAlert("Se perdió la conexión con el adaptador Wi-Fi.", "error");
-          return;
-        }
-      } else {
-        await activeTransport.pollIds(watchIds);
+      await activeTransport.pollIds(watchIds);
+      if (activeTransport.mode === "disconnected") {
+        await disconnectOBD(true);
+        showConnAlert("Se perdió la conexión con el adaptador.", "error");
+        return;
       }
+
+      updateMinMaxStats(activeTransport.latest || {});
 
       if (activeTransport.batteryVoltage) {
         const vStr = `${Number(activeTransport.batteryVoltage).toFixed(1)} V`;
@@ -314,6 +408,15 @@ function startPolling() {
         document.getElementById("batBadgeMob").innerText = vStr;
       }
       document.getElementById("pollBadge").innerText = `${activeTransport.lastPollMs || "--"} ms`;
+
+      if (audioAlertsEnabled && Date.now() - lastBeepTs > 5000) {
+        const ect = activeTransport.latest["0105"]?.value;
+        const bat = activeTransport.latest["ATRV"]?.value ?? activeTransport.batteryVoltage;
+        if ((typeof ect === "number" && ect >= 96) || (typeof bat === "number" && bat > 1 && bat < 11.8)) {
+          playBeep(ect >= 103 ? 1100 : 780, 0.2);
+          lastBeepTs = Date.now();
+        }
+      }
 
       if (isRecordingCsv) captureCsvRow();
 
@@ -334,7 +437,7 @@ function stopPolling() {
 }
 
 // =========================================================
-// GRABADOR CSV EN NAVEGADOR (UNIVERSAL WINDOWS/LINUX/ANDROID)
+// GRABADOR CSV + EXPORTAR REPORTE HTML
 // =========================================================
 function toggleLogging() {
   const dot = document.getElementById("logDot");
@@ -343,12 +446,12 @@ function toggleLogging() {
     isRecordingCsv = true;
     csvRows = [];
     dot.className = "w-2 h-2 rounded-full bg-red-500 pulse-dot";
-    lbl.innerText = "Detener & Bajar CSV";
+    lbl.innerText = "Bajar CSV";
     showConnAlert("Grabando telemetría en memoria del navegador...", "info");
   } else {
     isRecordingCsv = false;
     dot.className = "w-2 h-2 rounded-full bg-slate-500";
-    lbl.innerText = "Grabar CSV";
+    lbl.innerText = "CSV";
     downloadCsv();
   }
 }
@@ -366,26 +469,56 @@ function downloadCsv() {
   if (!csvRows.length) return showConnAlert("No se grabaron muestras para exportar.", "info");
   const headers = Object.keys(csvRows[0]);
   const lines = [headers.join(",")];
-  for (const r of csvRows) {
-    lines.push(headers.map((h) => r[h]).join(","));
-  }
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  for (const r of csvRows) lines.push(headers.map((h) => r[h]).join(","));
+  triggerDownload(`obd2_musso_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.csv`, lines.join("\n"), "text/csv;charset=utf-8;");
+  showConnAlert(`CSV descargado (${csvRows.length} muestras).`, "success");
+}
+
+function exportDiagnosticReport() {
+  const latest = activeTransport?.latest || {};
+  const dtcHtml = lastDtcResult
+    ? `<p><strong>MIL:</strong> ${lastDtcResult.mil_on ? "ENCENDIDA" : "Apagada"} | <strong>Confirmados:</strong> ${lastDtcResult.confirmed.map((c) => c.code).join(", ") || "Ninguno"} | <strong>Pendientes:</strong> ${lastDtcResult.pending.map((c) => c.code).join(", ") || "Ninguno"}</p>`
+    : `<p>No se ejecutó escaneo de DTCs en esta sesión.</p>`;
+
+  const rowsHtml = OBDCore.SENSOR_CATALOG.filter((s) => latest[s.id]).map((s) => {
+    const val = latest[s.id].value;
+    const mm = sessionMinMax[s.id];
+    return `<tr><td>${s.name}</td><td><code>${s.pid}</code></td><td><strong>${val} ${s.unit}</strong></td><td>${mm ? mm.min : "-"}</td><td>${mm ? mm.max : "-"}</td></tr>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Reporte OBD2 Studio</title>
+  <style>body{font-family:system-ui,sans-serif;max-width:900px;margin:2rem auto;padding:1rem;color:#0f172a}table{width:100%;border-collapse:collapse;margin-top:1rem}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left;font-size:13px}th{background:#f1f5f9}.meta{background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:8px}</style>
+  </head><body>
+  <h1>Reporte de Diagnóstico OBD2 Studio</h1>
+  <div class="meta">
+    <p><strong>Fecha:</strong> ${new Date().toLocaleString()} | <strong>Transporte:</strong> ${transportType.toUpperCase()}</p>
+    <p><strong>VIN:</strong> ${vehicleInfo?.vin || "--"} | <strong>ECU:</strong> ${vehicleInfo?.ecu_name || "--"} | <strong>Cal ID:</strong> ${vehicleInfo?.cal_id || "--"}</p>
+    ${dtcHtml}
+  </div>
+  <h2>Sensores Leídos (${Object.keys(latest).length})</h2>
+  <table><thead><tr><th>Sensor</th><th>PID</th><th>Valor Actual</th><th>Mín Sesión</th><th>Máx Sesión</th></tr></thead><tbody>${rowsHtml || "<tr><td colspan='5'>Sin lecturas registradas aún.</td></tr>"}</tbody></table>
+  </body></html>`;
+
+  triggerDownload(`reporte_obd2_${new Date().toISOString().slice(0, 10)}.html`, html, "text/html;charset=utf-8;");
+  showConnAlert("Reporte HTML descargado (puedes abrirlo e imprimirlo en PDF).", "success");
+}
+
+function triggerDownload(filename, content, mime) {
+  const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
   a.href = url;
-  a.download = `obd2_musso_${stamp}.csv`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
-  showConnAlert(`CSV descargado (${csvRows.length} muestras).`, "success");
 }
 
 // =========================================================
 // NAVEGACIÓN PRINCIPAL
 // =========================================================
-async function switchMainTab(tab) {
+function switchMainTab(tab) {
   activeTab = tab;
-  ["post_assembly", "all_sensors", "custom_views"].forEach((t) => {
+  ["post_assembly", "all_sensors", "custom_views", "terminal"].forEach((t) => {
     document.getElementById(`tab_${t}`).classList.toggle("hidden", t !== tab);
     const btn = document.getElementById(`nav_${t}`);
     btn.className = t === tab
@@ -393,22 +526,20 @@ async function switchMainTab(tab) {
       : "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60";
   });
   if (tab === "custom_views") renderActiveCustomView();
-  if (transportType === "wifi" && activeTransport) {
-    await activeTransport.setWatch(getWatchIdsForActiveTab());
-  }
 }
 
 // =========================================================
-// TAB 1: VISOR POST-ARMADO (FALLAS + COOLANT + ADMISIÓN)
+// TAB 1: VISOR POST-ARMADO
 // =========================================================
 async function scanDTCs() {
   const container = document.getElementById("dtcContainer");
   if (!activeTransport) {
-    container.innerHTML = `<div class="text-xs text-amber-300 p-4 text-center bg-amber-950/20 border border-amber-500/30 rounded-xl">Conectá primero por Bluetooth BLE, USB Serial, Wi-Fi Bridge o Simulador Demo.</div>`;
+    container.innerHTML = `<div class="text-xs text-amber-300 p-4 text-center bg-amber-950/20 border border-amber-500/30 rounded-xl">Conectá primero por BLE, USB Serial, Wi-Fi Bridge o Simulador Demo.</div>`;
     return;
   }
   container.innerHTML = `<div class="text-xs text-sky-300 p-4 text-center">Consultando ECU (Modos 0101, 03, 07, 0A y Freeze Frame 02)...</div>`;
   const res = await activeTransport.readDTCs();
+  lastDtcResult = res;
   if (!res.ok) {
     container.innerHTML = `<div class="text-xs text-red-300 bg-red-950/40 border border-red-500/30 rounded-xl p-4">${res.error}</div>`;
     return;
@@ -500,6 +631,7 @@ function renderPostAssemblySkeleton() {
           <span id="pa_val_${id}" class="text-xl font-black font-mono text-white">--</span>
           <span class="text-xs text-slate-400">${s.unit}</span>
         </div>
+        <div id="mm_${id}" class="text-[10px] font-mono text-slate-500 mt-0.5">-- / --</div>
       </div>`;
   }).join("");
 
@@ -520,6 +652,7 @@ function renderPostAssemblySkeleton() {
           <span id="pa_val_${id}" class="text-xl font-black font-mono text-white">--</span>
           <span class="text-xs text-slate-400">${s.unit}</span>
         </div>
+        <div id="mm_${id}" class="text-[10px] font-mono text-slate-500 mt-0.5">Mín -- / Máx --</div>
       </div>`;
   }).join("");
 }
@@ -532,6 +665,9 @@ function updatePostAssemblyUI() {
   if (ect) {
     const v = ect.value;
     document.getElementById("val_0105").innerText = v;
+    const mm = sessionMinMax["0105"];
+    if (mm) document.getElementById("mm_0105").innerText = `Mín ${mm.min}° / Máx ${mm.max}°`;
+
     const bar = document.getElementById("coolantBar");
     const tag = document.getElementById("coolantStatusTag");
     const phase = document.getElementById("thermalPhasePill");
@@ -573,9 +709,13 @@ function updatePostAssemblyUI() {
     if (id === "0105") return;
     const valEl = document.getElementById(`pa_val_${id}`);
     const cardEl = document.getElementById(`pa_card_${id}`);
+    const mmEl = document.getElementById(`mm_${id}`);
     const entry = latest[id];
-    if (!valEl || !cardEl || !entry) return;
-    valEl.innerText = entry.value;
+    if (!valEl || !cardEl) return;
+    if (entry) valEl.innerText = entry.value;
+    const mm = sessionMinMax[id];
+    if (mmEl) mmEl.innerText = mm ? `Mín ${mm.min} / Máx ${mm.max}` : "Mín -- / Máx --";
+    if (!entry) return;
     const status = evaluateAlert(OBDCore.CATALOG_BY_ID[id], entry.value);
     if (status === "crit") {
       cardEl.className = "bg-red-950/30 border border-red-500/60 rounded-xl p-3";
@@ -649,13 +789,10 @@ function renderCategoryPills() {
     </button>`).join("");
 }
 
-async function setCategoryFilter(catId) {
+function setCategoryFilter(catId) {
   activeCategoryFilter = catId;
   renderCategoryPills();
   renderAllSensors();
-  if (transportType === "wifi" && activeTransport) {
-    await activeTransport.setWatch(getWatchIdsForActiveTab());
-  }
 }
 
 function getFilteredCatalog() {
@@ -710,12 +847,8 @@ async function scanAllSensors() {
   const btn = document.getElementById("btnScanAll");
   btn.innerText = "⏳ Leyendo todos...";
   btn.disabled = true;
-  if (transportType === "wifi") {
-    const res = await activeTransport.scanAll();
-    if (res.ok && res.data) activeTransport.latest = res.data.latest || {};
-  } else {
-    await activeTransport.pollIds(getSupportedIds());
-  }
+  await activeTransport.pollIds(getSupportedIds());
+  updateMinMaxStats(activeTransport.latest || {});
   btn.innerText = "⚡ Barrido Completo (Leer Todos)";
   btn.disabled = false;
   updateAllSensorsValues();
@@ -723,7 +856,7 @@ async function scanAllSensors() {
 }
 
 // =========================================================
-// TAB 3: VISORES CUSTOM (PERSISTIDOS EN LOCALSTORAGE)
+// TAB 3: VISORES CUSTOM + EXPORT/IMPORT JSON
 // =========================================================
 function loadCustomViews() {
   try {
@@ -742,6 +875,30 @@ function saveCustomViews() {
   document.getElementById("viewsCountBadge").innerText = customViews.length;
 }
 
+function exportCustomViews() {
+  triggerDownload("obd2_custom_views.json", JSON.stringify(customViews, null, 2), "application/json");
+}
+
+function importCustomViews(ev) {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (!Array.isArray(parsed)) throw new Error("Formato inválido");
+      customViews = parsed;
+      activeCustomViewId = customViews[0]?.id || null;
+      saveCustomViews();
+      renderCustomViewTabs();
+      showConnAlert("Visores importados correctamente.", "success");
+    } catch (e) {
+      showConnAlert("Archivo JSON inválido: " + e.message, "error");
+    }
+  };
+  reader.readAsText(file);
+}
+
 function renderCustomViewTabs() {
   document.getElementById("customViewTabs").innerHTML = customViews.map((v) => `
     <button onclick="selectCustomView('${v.id}')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${v.id === activeCustomViewId ? "bg-emerald-500 text-slate-950 shadow" : "bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800"}">
@@ -752,12 +909,9 @@ function renderCustomViewTabs() {
   if (activeTab === "custom_views") renderActiveCustomView();
 }
 
-async function selectCustomView(id) {
+function selectCustomView(id) {
   activeCustomViewId = id;
   renderCustomViewTabs();
-  if (transportType === "wifi" && activeTransport) {
-    await activeTransport.setWatch(getWatchIdsForActiveTab());
-  }
 }
 
 function renderActiveCustomView() {
@@ -839,7 +993,56 @@ function updateCustomViewValues() {
 }
 
 // =========================================================
-// CONSTRUCTOR MODAL
+// TAB 4: TERMINAL RAW OBD / AT / UDS
+// =========================================================
+function appendTerminalLine(text, cls = "text-slate-300") {
+  const out = document.getElementById("termOutput");
+  const div = document.createElement("div");
+  div.className = cls;
+  div.textContent = text;
+  out.appendChild(div);
+  out.scrollTop = out.scrollHeight;
+}
+
+function clearTerminal() {
+  document.getElementById("termOutput").innerHTML = `<div class="text-slate-500">// Consola limpia.</div>`;
+}
+
+function sendQuickCmd(cmd) {
+  document.getElementById("termInput").value = cmd;
+  sendTermCommand();
+}
+
+function onTermKey(ev) {
+  if (ev.key === "Enter") {
+    sendTermCommand();
+  } else if (ev.key === "ArrowUp" && termHistory.length) {
+    termHistoryIdx = Math.min(termHistory.length - 1, termHistoryIdx + 1);
+    ev.target.value = termHistory[termHistory.length - 1 - termHistoryIdx];
+  } else if (ev.key === "ArrowDown") {
+    termHistoryIdx = Math.max(-1, termHistoryIdx - 1);
+    ev.target.value = termHistoryIdx === -1 ? "" : termHistory[termHistory.length - 1 - termHistoryIdx];
+  }
+}
+
+async function sendTermCommand() {
+  const inp = document.getElementById("termInput");
+  const cmd = inp.value.trim().toUpperCase();
+  if (!cmd) return;
+  if (!activeTransport || !activeTransport.sendRaw) {
+    appendTerminalLine("[-] Error: Conectate primero a un adaptador o al Simulador Demo.", "text-red-400");
+    return;
+  }
+  termHistory.push(cmd);
+  termHistoryIdx = -1;
+  inp.value = "";
+  appendTerminalLine(`>> ${cmd}`, "text-sky-400 font-bold");
+  const res = await activeTransport.sendRaw(cmd);
+  appendTerminalLine(`<< ${res.raw || "(sin respuesta)"}`, "text-emerald-300");
+}
+
+// =========================================================
+// CONSTRUCTOR MODAL & QUICK ADD
 // =========================================================
 function openViewBuilder(viewToEdit) {
   editingViewId = viewToEdit ? viewToEdit.id : null;
@@ -904,7 +1107,7 @@ function changeBuilderWidgetType(id, type) {
   if (builderSelections[id]) builderSelections[id] = type;
 }
 
-async function saveViewFromBuilder() {
+function saveViewFromBuilder() {
   const name = document.getElementById("vbName").value.trim();
   if (!name) return alert("Ingresá un nombre para el visor.");
   const widgets = Object.entries(builderSelections).map(([sensor_id, type]) => ({ sensor_id, type }));
@@ -924,7 +1127,6 @@ async function saveViewFromBuilder() {
   activeCustomViewId = viewObj.id;
   closeViewBuilder();
   renderCustomViewTabs();
-  if (transportType === "wifi" && activeTransport) await activeTransport.setWatch(getWatchIdsForActiveTab());
 }
 
 function deleteActiveCustomView() {
@@ -970,7 +1172,7 @@ function confirmQuickAdd() {
 }
 
 // =========================================================
-// GRÁFICAS CANVAS EN TIEMPO REAL
+// GRÁFICAS CANVAS
 // =========================================================
 function drawMultiSeriesChart(canvas, historyTelemetry, seriesList) {
   if (!canvas) return;

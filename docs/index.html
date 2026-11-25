@@ -48,7 +48,7 @@
                   <span id="connText">Desconectado</span>
                 </span>
                 <button id="btnInstallPwa" onclick="installPWA()" class="hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30">
-                  📲 Instalar App Offline
+                  📲 Instalar App
                 </button>
               </div>
               <p id="adapterSubtitle" class="text-[11px] text-slate-400 font-mono">BLE / USB Serial directo en navegador • Wi-Fi via Bridge</p>
@@ -60,13 +60,13 @@
           </div>
         </div>
 
-        <!-- Selector Multi-Transporte -->
-        <div class="flex flex-wrap items-center gap-2">
+        <!-- Selector Multi-Transporte + Herramientas -->
+        <div class="flex flex-wrap items-center gap-1.5">
           <div id="connectButtonsGroup" class="flex flex-wrap items-center gap-1.5">
-            <button onclick="connectMode('ble')" id="btnConnBle" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow flex items-center gap-1" title="Bluetooth Low Energy directo en Android/PC (sin instalar nada)">
-              <span>🔵</span> Bluetooth BLE
+            <button onclick="connectMode('ble')" id="btnConnBle" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow flex items-center gap-1" title="Bluetooth Low Energy directo en Android/PC">
+              <span>🔵</span> BLE
             </button>
-            <button onclick="connectMode('serial')" id="btnConnSerial" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition shadow flex items-center gap-1" title="USB o puerto COM Bluetooth Clásico en Windows/Linux">
+            <button onclick="connectMode('serial')" id="btnConnSerial" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition shadow flex items-center gap-1" title="USB o puerto COM Bluetooth Clásico en Windows/Linux">
               <span>🔌</span> USB / Serial
             </button>
             <select id="inpBaud" class="px-1.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-300" title="Baudrate para USB/Serial">
@@ -75,7 +75,7 @@
               <option value="9600">9600</option>
               <option value="230400">230400</option>
             </select>
-            <button onclick="connectMode('wifi')" id="btnConnWifi" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow flex items-center gap-1" title="Adaptador ELM327 Wi-Fi mediante Bridge local Windows/Linux">
+            <button onclick="connectMode('wifi')" id="btnConnWifi" class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow flex items-center gap-1" title="Adaptador ELM327 Wi-Fi mediante Bridge local">
               <span>📡</span> Wi-Fi Bridge
             </button>
             <button onclick="connectMode('demo')" id="btnDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition">
@@ -87,32 +87,85 @@
             ⏹ Desconectar
           </button>
 
+          <button onclick="toggleBridgeHelp()" id="btnBridgeHelp" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300 flex items-center gap-1" title="Descargar script bridge Wi-Fi para Windows o Linux">
+            <span>⬇️</span> Scripts Wi-Fi
+          </button>
+
           <button onclick="connectWifiVLink()" id="btnWifi" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1">
             <span>📶</span> <span id="wifiBtnLabel">V-LINK</span>
           </button>
 
-          <button onclick="toggleLogging()" id="btnLog" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1.5">
-            <span id="logDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
-            <span id="logLabel">Grabar CSV</span>
+          <button onclick="toggleAudioAlert()" id="btnAudio" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300" title="Activar alarma sonora si Coolant >= 96°C o Voltaje < 11.8V">
+            <span id="audioIcon">🔕</span> Alerta
           </button>
 
-          <div class="hidden xl:flex items-center gap-2 ml-1 text-xs font-mono">
-            <span id="batBadge" class="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-bold">-- V</span>
+          <button onclick="toggleLogging()" id="btnLog" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1.5">
+            <span id="logDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="logLabel">CSV</span>
+          </button>
+
+          <button onclick="exportDiagnosticReport()" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300" title="Exportar informe completo HTML imprimible">
+            📄 Reporte
+          </button>
+
+          <div class="hidden xl:flex items-center gap-1.5 ml-1 text-xs font-mono">
+            <span id="batBadge" class="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-bold">-- V</span>
             <span id="pollBadge" class="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400">-- ms</span>
           </div>
         </div>
       </div>
 
-      <!-- Configuración Wi-Fi Bridge (compacta y colapsable si no se usa) -->
-      <div id="bridgeHelpBox" class="hidden mt-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div class="text-slate-300">
-          <strong>Nota sobre Wi-Fi ELM327:</strong> Los navegadores no abren sockets TCP crudos por seguridad. Para usar un adaptador Wi-Fi desde esta web, ejecutá <code class="text-emerald-300">start_windows.bat</code> (Windows) o <code class="text-emerald-300">./start_linux.sh</code> (Linux).
+      <!-- PANEL DESCARGA DIRECTA BRIDGE WI-FI (WINDOWS / LINUX) -->
+      <div id="bridgeHelpBox" class="hidden mt-3 p-4 rounded-2xl bg-slate-900/95 border border-emerald-500/30 text-xs space-y-3 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <div class="font-bold text-emerald-300 text-sm">📡 Descarga Directa del Bridge Wi-Fi (Windows y Linux)</div>
+            <p class="text-slate-400 mt-0.5">Para adaptadores Wi-Fi (TCP <code class="text-slate-200">192.168.0.10:35000</code>), descargá y ejecutá este único script en Python 3 (cero librerías externas):</p>
+          </div>
+          <button onclick="toggleBridgeHelp()" class="self-end sm:self-auto text-slate-400 hover:text-white px-2 py-1">Cerrar &times;</button>
         </div>
-        <div class="flex items-center gap-1.5 font-mono shrink-0">
-          <input id="inpIp" type="text" value="192.168.0.10" class="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
-          <input id="inpPort" type="number" value="35000" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
-          <input id="inpBridgeUrl" type="text" value="http://127.0.0.1:8080" class="w-36 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="./downloads/obd2-wifi-bridge.py" download="obd2-wifi-bridge.py" class="px-3.5 py-2 rounded-xl font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow inline-flex items-center gap-1.5">
+            ⬇️ Descargar obd2-wifi-bridge.py (1 archivo)
+          </a>
+          <a href="https://github.com/pgtoopx/obd2-studio/archive/refs/heads/main.zip" target="_blank" rel="noopener" class="px-3.5 py-2 rounded-xl font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 inline-flex items-center gap-1.5">
+            📦 Descargar Repo Completo (.zip)
+          </a>
+          <div class="flex items-center gap-1.5 font-mono ml-auto">
+            <span class="text-slate-400">OBD IP:</span>
+            <input id="inpIp" type="text" value="192.168.0.10" class="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+            <input id="inpPort" type="number" value="35000" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+            <input id="inpBridgeUrl" type="text" value="http://127.0.0.1:8080" class="w-36 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" title="URL del Bridge local" />
+          </div>
         </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-bold text-sky-300">🪟 Windows (PowerShell 1-línea):</span>
+              <button onclick="copyCmd('cmdWin')" class="text-[11px] text-slate-400 hover:text-white underline">Copiar</button>
+            </div>
+            <code id="cmdWin" class="block text-[11px] font-mono text-slate-300 break-all">irm https://pgtoopx.github.io/obd2-studio/downloads/obd2-wifi-bridge.py -OutFile obd2-wifi-bridge.py; python obd2-wifi-bridge.py</code>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-2.5">
+            <div class="flex justify-between items-center mb-1">
+              <span class="font-bold text-amber-300">🐧 Linux (Terminal 1-línea):</span>
+              <button onclick="copyCmd('cmdLin')" class="text-[11px] text-slate-400 hover:text-white underline">Copiar</button>
+            </div>
+            <code id="cmdLin" class="block text-[11px] font-mono text-slate-300 break-all">curl -fsSL https://pgtoopx.github.io/obd2-studio/downloads/obd2-wifi-bridge.py -o obd2-wifi-bridge.py && python3 obd2-wifi-bridge.py</code>
+          </div>
+        </div>
+      </div>
+
+      <!-- Barra de Identidad del Vehículo (Mode 09) -->
+      <div id="vehicleInfoBar" class="hidden mt-2.5 px-3 py-1.5 rounded-xl bg-slate-900/70 border border-slate-800 text-[11px] font-mono flex flex-wrap items-center justify-between gap-2 text-slate-300">
+        <div class="flex flex-wrap items-center gap-3">
+          <span>🚘 VIN: <strong id="vInfoVin" class="text-sky-300">--</strong></span>
+          <span>🧠 ECU: <strong id="vInfoEcu" class="text-slate-200">--</strong></span>
+          <span>🏷️ Cal ID: <strong id="vInfoCal" class="text-slate-400">--</strong></span>
+        </div>
+        <button onclick="refreshVehicleInfo()" class="text-sky-400 hover:text-sky-300 underline">Releer VIN (0902)</button>
       </div>
 
       <div id="connAlert" class="hidden mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2"></div>
@@ -120,13 +173,16 @@
       <!-- Tabs -->
       <nav class="flex items-center gap-1.5 mt-3 overflow-x-auto pb-0.5">
         <button onclick="switchMainTab('post_assembly')" id="nav_post_assembly" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow">
-          🔧 Visor Post-Armado & Fallas
+          🔧 Post-Armado & Fallas
         </button>
         <button onclick="switchMainTab('all_sensors')" id="nav_all_sensors" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
           📊 Todos los Sensores (<span id="sensorCountBadge">38</span>)
         </button>
         <button onclick="switchMainTab('custom_views')" id="nav_custom_views" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
           🎛️ Visores Custom (<span id="viewsCountBadge">2</span>)
+        </button>
+        <button onclick="switchMainTab('terminal')" id="nav_terminal" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          💻 Terminal OBD / UDS
         </button>
       </nav>
     </div>
@@ -156,7 +212,7 @@
         </div>
         <div id="dtcContainer" class="mt-4">
           <div class="text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center">
-            Elegí tu método de conexión arriba (Bluetooth BLE, USB Serial, Wi-Fi Bridge o Demo) y tocá <strong>"Escanear Fallas Ahora"</strong>.
+            Elegí tu método de conexión arriba (BLE, USB Serial, Wi-Fi Bridge o Demo) y tocá <strong>"Escanear Fallas Ahora"</strong>.
           </div>
         </div>
       </div>
@@ -170,8 +226,13 @@
             </h2>
             <p class="text-xs text-slate-400">Vigila el refrigerante (<span class="text-amber-300">termostato ~82-88°C</span>) y temperatura EGR para detectar bolsas de aire.</p>
           </div>
-          <div id="thermalPhasePill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
-            Esperando datos...
+          <div class="flex items-center gap-2">
+            <div id="thermalPhasePill" class="px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
+              Esperando datos...
+            </div>
+            <button onclick="resetMinMax()" class="px-2.5 py-1 rounded-lg text-[11px] bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300" title="Reiniciar picos Mín/Máx de la sesión">
+              ↺ Reset Picos
+            </button>
           </div>
         </div>
 
@@ -184,9 +245,12 @@
               </div>
               <span id="coolantStatusTag" class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-400">--</span>
             </div>
-            <div class="my-4 flex items-baseline gap-2">
-              <span id="val_0105" class="text-5xl font-black font-mono text-white">--</span>
-              <span class="text-xl text-slate-400 font-bold">°C</span>
+            <div class="my-3 flex items-baseline justify-between">
+              <div class="flex items-baseline gap-2">
+                <span id="val_0105" class="text-5xl font-black font-mono text-white">--</span>
+                <span class="text-xl text-slate-400 font-bold">°C</span>
+              </div>
+              <div id="mm_0105" class="text-[11px] font-mono text-slate-400 text-right">Mín -- / Máx --</div>
             </div>
             <div class="space-y-1.5">
               <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex">
@@ -226,7 +290,7 @@
             <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               <span>🌀</span> Hermeticidad de Admisión, Turbo, EGR y Niveles
             </h2>
-            <p class="text-xs text-slate-400">Comprueba fugas en mangueras/juntas, respuesta de EGR, voltaje de carga y combustible.</p>
+            <p class="text-xs text-slate-400">Mín/Máx en vivo: clave para cazar caídas de batería al arrancar o fugas de soplado.</p>
           </div>
           <div id="boostDeltaPill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
             Boost Neto: -- bar
@@ -273,11 +337,20 @@
       <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 class="text-base sm:text-lg font-bold text-white">🎛️ Mis Visores Personalizados</h2>
-          <p class="text-xs text-slate-400">Arma tableros combinando tarjetas numéricas, barras y gráficas en vivo.</p>
+          <p class="text-xs text-slate-400">Arma, exporta o importa tableros combinando tarjetas, barras y gráficas en vivo.</p>
         </div>
-        <button onclick="openViewBuilder(null)" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow">
-          + Nuevo Visor Custom
-        </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="exportCustomViews()" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">
+            ⬆️ Exportar JSON
+          </button>
+          <label class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 cursor-pointer">
+            ⬇️ Importar JSON
+            <input type="file" accept=".json" onchange="importCustomViews(event)" class="hidden" />
+          </label>
+          <button onclick="openViewBuilder(null)" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow">
+            + Nuevo Visor Custom
+          </button>
+        </div>
       </div>
       <div id="customViewTabs" class="flex flex-wrap items-center gap-2"></div>
       <div id="activeCustomViewHeader" class="hidden glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -291,6 +364,42 @@
         </div>
       </div>
       <div id="customViewWidgets" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+
+    <!-- TAB 4: TERMINAL RAW OBD / AT / UDS -->
+    <section id="tab_terminal" class="hidden space-y-4">
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white">💻 Terminal Directa OBD-II / AT / UDS</h2>
+            <p class="text-xs text-slate-400">Envía comandos crudos directamente al adaptador ELM327 o ECU (funciona en BLE, USB Serial, Wi-Fi Bridge y Demo).</p>
+          </div>
+          <button onclick="clearTerminal()" class="self-start sm:self-auto px-3 py-1.5 rounded-lg text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">Limpiar Consola</button>
+        </div>
+
+        <!-- Comandos rápidos -->
+        <div class="flex flex-wrap gap-1.5 text-xs font-mono">
+          <button onclick="sendQuickCmd('ATZ')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-300">ATZ (Reset)</button>
+          <button onclick="sendQuickCmd('ATRV')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-emerald-300">ATRV (Voltaje)</button>
+          <button onclick="sendQuickCmd('ATDP')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300">ATDP (Protocolo)</button>
+          <button onclick="sendQuickCmd('0902')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-300">0902 (VIN)</button>
+          <button onclick="sendQuickCmd('0100')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200">0100 (PIDs)</button>
+          <button onclick="sendQuickCmd('0105')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200">0105 (Coolant)</button>
+          <button onclick="sendQuickCmd('03')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-red-300">03 (DTCs)</button>
+          <button onclick="sendQuickCmd('1902FF')" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-pink-300">1902FF (UDS DTCs)</button>
+        </div>
+
+        <!-- Output -->
+        <div id="termOutput" class="h-72 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs space-y-1.5">
+          <div class="text-slate-500">// Terminal lista. Conectate arriba y escribí un comando (ej: ATRV, 0105, 0902)...</div>
+        </div>
+
+        <!-- Input -->
+        <div class="flex gap-2">
+          <input id="termInput" type="text" placeholder="Comando AT / OBD / UDS (ej: 0170)" onkeydown="onTermKey(event)" class="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 font-mono text-xs text-white uppercase focus:outline-none focus:border-sky-500" />
+          <button onclick="sendTermCommand()" class="px-4 py-2.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition">Enviar</button>
+        </div>
+      </div>
     </section>
   </main>
 
