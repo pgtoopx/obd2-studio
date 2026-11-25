@@ -297,9 +297,9 @@ class OBDBridge:
                 self.supported_ids = matched
 
     def disconnect(self):
+        self._stop_poller()
+        self.stop_log()
         with self.lock:
-            self._stop_poller()
-            self.stop_log()
             if self.sock:
                 try:
                     self.sock.close()
@@ -316,8 +316,18 @@ class OBDBridge:
 
     def _stop_poller(self):
         self._stop_event.set()
+        if self.sock:
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
+            try:
+                self.sock.close()
+            except Exception:
+                pass
+            self.sock = None
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
+            self._thread.join(timeout=1.5)
         self._thread = None
 
     def set_watch_ids(self, ids):
@@ -352,31 +362,39 @@ class OBDBridge:
             pid_groups.setdefault(pid, []).append(meta)
 
         for pid, metas in pid_groups.items():
-            if self._stop_event.is_set():
+            if self._stop_event.is_set() or not self.sock:
                 break
             if pid == "ATRV":
-                raw = self._raw_cmd("ATRV", delay=0.06)
+                with self.lock:
+                    if not self.sock:
+                        break
+                    raw = self._raw_cmd("ATRV", delay=0.06)
                 try:
                     val = round(float(raw.replace("V", "").strip()), 2)
                     self.battery_voltage = val
-                    for m in metas:
-                        self._record_value(m["id"], val, raw)
+                    with self.lock:
+                        for m in metas:
+                            self._record_value(m["id"], val, raw)
                 except Exception:
                     pass
                 continue
 
-            raw = self._raw_cmd(pid, delay=0.06)
+            with self.lock:
+                if not self.sock:
+                    break
+                raw = self._raw_cmd(pid, delay=0.06)
             data = extract_data_bytes(raw, "41", pid[2:])
             if not data:
                 continue
-            for m in metas:
-                if len(data) >= m["min_bytes"] and m["decoder"]:
-                    try:
-                        val = m["decoder"](data)
-                        if val is not None:
-                            self._record_value(m["id"], val, " ".join(data))
-                    except Exception:
-                        pass
+            with self.lock:
+                for m in metas:
+                    if len(data) >= m["min_bytes"] and m["decoder"]:
+                        try:
+                            val = m["decoder"](data)
+                            if val is not None:
+                                self._record_value(m["id"], val, " ".join(data))
+                        except Exception:
+                            pass
 
     def _poll_once_demo(self, target_ids):
         """Genera telemetría realista de SsangYong Musso 2.2 calentando tras rearmado."""
@@ -451,8 +469,7 @@ class OBDBridge:
                     current_mode = self.mode
 
                 if current_mode == "live":
-                    with self.lock:
-                        self._poll_once_live(targets)
+                    self._poll_once_live(targets)
                 elif current_mode == "demo":
                     with self.lock:
                         self._poll_once_demo(targets)

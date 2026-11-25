@@ -87,13 +87,16 @@ class StudioHandler(SimpleHTTPRequestHandler):
         self.end_headers()
 
     def _send_json(self, payload, status=200):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", "0"))
@@ -225,4 +228,9 @@ if __name__ == "__main__":
     port = int(os.environ.get("OBD_WEB_PORT", "8080"))
     server = ThreadingHTTPServer(("0.0.0.0", port), StudioHandler)
     print(f"OBD2 Studio Server corriendo en http://127.0.0.1:{port}", flush=True)
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

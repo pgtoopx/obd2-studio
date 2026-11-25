@@ -93,8 +93,6 @@ async function initApp() {
   renderChecklist();
   renderCategoryPills();
   renderAllSensors();
-  // En desktop (>1024px) el drawer puede iniciar abierto; en mobile arranca compacto
-  toggleHeaderDrawer(window.innerWidth >= 1024);
   checkLocalBridgeAvailability();
   await refreshStoredRecordingsList();
 
@@ -107,18 +105,63 @@ async function initApp() {
   window.addEventListener("pagehide", flushActive);
 }
 
+function openConnectModal(defaultTab = null) {
+  const modal = document.getElementById("connectionModal");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  if (defaultTab) switchConnTab(defaultTab);
+  detectCapabilities();
+  checkLocalBridgeAvailability();
+  document.body.classList.add("overflow-hidden");
+}
+
+function closeConnectModal() {
+  const modal = document.getElementById("connectionModal");
+  if (!modal) return;
+  modal.classList.add("hidden");
+  document.body.classList.remove("overflow-hidden");
+}
+
+function switchConnTab(tab) {
+  const tabs = ["ble", "serial", "wifi", "demo"];
+  tabs.forEach((t) => {
+    const btn = document.getElementById(`tabBtn_${t}`);
+    const panel = document.getElementById(`connPanel_${t}`);
+    if (btn) {
+      if (t === tab) {
+        btn.className = "py-2.5 px-1 text-center rounded-lg text-xs font-bold transition bg-sky-500 text-slate-950 shadow";
+      } else {
+        btn.className = "py-2.5 px-1 text-center rounded-lg text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-800/60";
+      }
+    }
+    if (panel) {
+      panel.classList.toggle("hidden", t !== tab);
+    }
+  });
+}
+
+function toggleBridgeInstructions(forceOpen = null) {
+  const box = document.getElementById("bridgeHelpBox");
+  const chev = document.getElementById("bridgeChevron");
+  if (!box) return;
+  const shouldOpen = forceOpen !== null ? forceOpen : box.classList.contains("hidden");
+  box.classList.toggle("hidden", !shouldOpen);
+  if (chev) chev.innerText = shouldOpen ? "▴" : "▾";
+}
+
+// Wrapper retrocompatible para llamadas previas
 function toggleHeaderDrawer(forceState = null) {
-  const drawer = document.getElementById("headerDrawer");
-  const chev = document.getElementById("drawerChevron");
-  const btn = document.getElementById("btnHeaderToggle");
-  if (!drawer) return;
-  headerDrawerOpen = forceState !== null ? forceState : !headerDrawerOpen;
-  drawer.classList.toggle("hidden", !headerDrawerOpen);
-  if (chev) chev.innerText = headerDrawerOpen ? "▴" : "▾";
-  if (btn) {
-    btn.className = headerDrawerOpen
-      ? "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-slate-950 flex items-center gap-1 transition"
-      : "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 flex items-center gap-1 transition";
+  if (forceState === true) {
+    openConnectModal();
+  } else if (forceState === false) {
+    closeConnectModal();
+  } else {
+    const modal = document.getElementById("connectionModal");
+    if (modal && modal.classList.contains("hidden")) {
+      openConnectModal();
+    } else {
+      closeConnectModal();
+    }
   }
 }
 
@@ -144,39 +187,83 @@ async function installPWA() {
 function detectCapabilities() {
   const bleBtn = document.getElementById("btnConnBle");
   const serBtn = document.getElementById("btnConnSerial");
-  if (!navigator.bluetooth && bleBtn) {
-    bleBtn.title = "Tu navegador no soporta Web Bluetooth (usá Chrome/Edge en Android, Windows, Linux o macOS)";
-    bleBtn.classList.add("opacity-60");
+  const blePill = document.getElementById("bleSupportPill");
+  const serPill = document.getElementById("serialSupportPill");
+
+  if (navigator.bluetooth) {
+    if (blePill) {
+      blePill.innerText = "Navegador Compatible";
+      blePill.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+    }
+    if (bleBtn) bleBtn.classList.remove("opacity-60");
+  } else {
+    if (bleBtn) {
+      bleBtn.title = "Tu navegador no soporta Web Bluetooth (usá Chrome/Edge en Android o PC)";
+      bleBtn.classList.add("opacity-60");
+    }
+    if (blePill) {
+      blePill.innerText = "No Compatible";
+      blePill.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+    }
   }
-  if (!navigator.serial && serBtn) {
-    serBtn.title = "Tu navegador no soporta Web Serial (usá Chrome/Edge de escritorio en Windows/Linux/macOS)";
-    serBtn.classList.add("opacity-60");
+
+  if (navigator.serial) {
+    if (serPill) {
+      serPill.innerText = "Navegador Compatible";
+      serPill.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+    }
+    if (serBtn) serBtn.classList.remove("opacity-60");
+  } else {
+    if (serBtn) {
+      serBtn.title = "Tu navegador no soporta Web Serial (usá Chrome/Edge de escritorio)";
+      serBtn.classList.add("opacity-60");
+    }
+    if (serPill) {
+      serPill.innerText = "Solo Escritorio";
+      serPill.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
+    }
   }
 }
 
 async function checkLocalBridgeAvailability() {
+  const dot = document.getElementById("bridgeStatusDot");
+  const txt = document.getElementById("bridgeStatusText");
   try {
     const res = await fetch(`${getBridgeUrl()}/api/status`, { method: "GET" });
     if (res.ok) {
       const data = await res.json();
       updateWifiBadge(data.wifi);
+      if (dot && txt) {
+        dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-400";
+        txt.innerText = "Bridge local activo y listo (127.0.0.1:8080)";
+        txt.className = "text-emerald-300 font-medium truncate";
+      }
+    } else {
+      throw new Error();
     }
-  } catch (_) {}
+  } catch (_) {
+    if (dot && txt) {
+      dot.className = "w-2.5 h-2.5 rounded-full bg-amber-500";
+      txt.innerText = "Bridge local no detectado (opcional si usás BLE/Serial)";
+      txt.className = "text-slate-400 font-medium truncate";
+    }
+  }
 }
 
 function getBridgeUrl() {
-  if (window.location.hostname === "127.0.0.1" || window.location.hostname === "localhost") {
+  if (
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname === "localhost" ||
+    window.location.port === "8080"
+  ) {
     return window.location.origin;
   }
   return document.getElementById("inpBridgeUrl")?.value.trim() || "http://127.0.0.1:8080";
 }
 
 function toggleBridgeHelp(forceOpen = null) {
-  const el = document.getElementById("bridgeHelpBox");
-  if (!el) return;
-  const shouldOpen = forceOpen !== null ? forceOpen : el.classList.contains("hidden");
-  if (shouldOpen) toggleHeaderDrawer(true);
-  el.classList.toggle("hidden", !shouldOpen);
+  openConnectModal("wifi");
+  toggleBridgeInstructions(forceOpen);
 }
 
 async function copyCmd(elId) {
@@ -251,8 +338,7 @@ async function connectMode(mode) {
 
   resetMinMax();
   updateConnectionHeader();
-  // En mobile, compactar el header automáticamente al conectar para liberar la pantalla
-  if (window.innerWidth < 1024) toggleHeaderDrawer(false);
+  closeConnectModal();
   document.getElementById("sensorCountBadge").innerText = getSupportedIds().length;
   renderAllSensors();
   await refreshVehicleInfo();
@@ -270,6 +356,7 @@ async function disconnectOBD(silent = false) {
   vehicleInfo = null;
   document.getElementById("vehicleInfoBar")?.classList.add("hidden");
   updateConnectionHeader();
+  closeConnectModal();
   if (!silent) showConnAlert("Sesión OBD-II cerrada.", "info");
 }
 
@@ -322,17 +409,17 @@ function updateConnectionHeader() {
   const discBtn = document.getElementById("btnDisconnect");
   const discBtnTop = document.getElementById("btnDisconnectTop");
   const toggleLbl = document.getElementById("drawerToggleLabel");
-  const connectBtns = document.getElementById("connectButtonsGroup");
+  const modalDiscSec = document.getElementById("connModalDisconnectSection");
 
   if (transportType === "disconnected") {
-    badge.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0";
-    dot.className = "w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-500";
-    txt.innerText = "Desconectado";
-    sub.innerText = "BLE / USB Serial directo en navegador • Wi-Fi via Bridge";
-    discBtn.classList.add("hidden");
+    if (badge) badge.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0";
+    if (dot) dot.className = "w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-500";
+    if (txt) txt.innerText = "Desconectado";
+    if (sub) sub.innerText = "BLE / USB Serial directo en navegador • Wi-Fi via Bridge";
+    discBtn?.classList.add("hidden");
     discBtnTop?.classList.add("hidden");
-    if (toggleLbl) toggleLbl.innerText = "🔌 Conectar";
-    connectBtns.classList.remove("hidden");
+    modalDiscSec?.classList.add("hidden");
+    if (toggleLbl) toggleLbl.innerText = "Conectar";
   } else {
     const labels = {
       ble: ["BLE", "bg-sky-500/20 text-sky-300 border-sky-500/40", "bg-sky-400"],
@@ -340,15 +427,15 @@ function updateConnectionHeader() {
       wifi: ["Wi-Fi", "bg-emerald-500/20 text-emerald-300 border-emerald-500/40", "bg-emerald-400"],
       demo: ["Demo", "bg-amber-500/20 text-amber-300 border-amber-500/40", "bg-amber-400"],
     };
-    const [label, cls, dotCls] = labels[transportType];
-    badge.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border shrink-0 ${cls}`;
-    dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${dotCls} pulse-dot`;
-    txt.innerText = label;
-    sub.innerText = `${activeTransport?.adapterVersion || "ELM327"} • ${activeTransport?.protocol || ""}`;
-    discBtn.classList.remove("hidden");
+    const [label, cls, dotCls] = labels[transportType] || ["Conectado", "bg-sky-500/20 text-sky-300", "bg-sky-400"];
+    if (badge) badge.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border shrink-0 ${cls}`;
+    if (dot) dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${dotCls} pulse-dot`;
+    if (txt) txt.innerText = label;
+    if (sub) sub.innerText = `${activeTransport?.adapterVersion || "ELM327"} • ${activeTransport?.protocol || ""}`;
+    discBtn?.classList.remove("hidden");
     discBtnTop?.classList.remove("hidden");
-    if (toggleLbl) toggleLbl.innerText = "⚙️ Opciones";
-    connectBtns.classList.add("hidden");
+    modalDiscSec?.classList.remove("hidden");
+    if (toggleLbl) toggleLbl.innerText = "Cambiar";
   }
 }
 

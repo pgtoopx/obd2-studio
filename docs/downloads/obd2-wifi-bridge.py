@@ -183,13 +183,16 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def _json(self, data, status=200):
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            pass
 
     def _body(self):
         n = int(self.headers.get("Content-Length", "0"))
@@ -238,4 +241,10 @@ if __name__ == "__main__":
     print("  Open https://pgtoopx.github.io/obd2-studio/ and click 'Wi-Fi Bridge'")
     print("  Press Ctrl+C to stop.")
     print("=" * 60, flush=True)
-    ThreadingHTTPServer(("127.0.0.1", port), BridgeHandler).serve_forever()
+    srv = ThreadingHTTPServer(("127.0.0.1", port), BridgeHandler)
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        srv.server_close()
