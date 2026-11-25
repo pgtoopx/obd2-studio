@@ -74,6 +74,7 @@ let lastDtcResult = null;
 // Audio alert
 let audioAlertsEnabled = false;
 let lastBeepTs = 0;
+let headerDrawerOpen = false;
 
 // Terminal history
 let termHistory = [];
@@ -91,7 +92,24 @@ async function initApp() {
   renderChecklist();
   renderCategoryPills();
   renderAllSensors();
+  // En desktop (>1024px) el drawer puede iniciar abierto; en mobile arranca compacto
+  toggleHeaderDrawer(window.innerWidth >= 1024);
   checkLocalBridgeAvailability();
+}
+
+function toggleHeaderDrawer(forceState = null) {
+  const drawer = document.getElementById("headerDrawer");
+  const chev = document.getElementById("drawerChevron");
+  const btn = document.getElementById("btnHeaderToggle");
+  if (!drawer) return;
+  headerDrawerOpen = forceState !== null ? forceState : !headerDrawerOpen;
+  drawer.classList.toggle("hidden", !headerDrawerOpen);
+  if (chev) chev.innerText = headerDrawerOpen ? "▴" : "▾";
+  if (btn) {
+    btn.className = headerDrawerOpen
+      ? "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500 text-slate-950 flex items-center gap-1 transition"
+      : "px-2.5 py-1.5 rounded-lg text-xs font-bold bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/40 text-sky-300 flex items-center gap-1 transition";
+  }
 }
 
 function registerPWA() {
@@ -146,9 +164,9 @@ function getBridgeUrl() {
 function toggleBridgeHelp(forceOpen = null) {
   const el = document.getElementById("bridgeHelpBox");
   if (!el) return;
-  if (forceOpen === true) el.classList.remove("hidden");
-  else if (forceOpen === false) el.classList.add("hidden");
-  else el.classList.toggle("hidden");
+  const shouldOpen = forceOpen !== null ? forceOpen : el.classList.contains("hidden");
+  if (shouldOpen) toggleHeaderDrawer(true);
+  el.classList.toggle("hidden", !shouldOpen);
 }
 
 async function copyCmd(elId) {
@@ -223,6 +241,8 @@ async function connectMode(mode) {
 
   resetMinMax();
   updateConnectionHeader();
+  // En mobile, compactar el header automáticamente al conectar para liberar la pantalla
+  if (window.innerWidth < 1024) toggleHeaderDrawer(false);
   document.getElementById("sensorCountBadge").innerText = getSupportedIds().length;
   renderAllSensors();
   await refreshVehicleInfo();
@@ -290,28 +310,34 @@ function updateConnectionHeader() {
   const txt = document.getElementById("connText");
   const sub = document.getElementById("adapterSubtitle");
   const discBtn = document.getElementById("btnDisconnect");
+  const discBtnTop = document.getElementById("btnDisconnectTop");
+  const toggleLbl = document.getElementById("drawerToggleLabel");
   const connectBtns = document.getElementById("connectButtonsGroup");
 
   if (transportType === "disconnected") {
-    badge.className = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700";
-    dot.className = "w-2 h-2 rounded-full bg-slate-500";
+    badge.className = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0";
+    dot.className = "w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-slate-500";
     txt.innerText = "Desconectado";
     sub.innerText = "BLE / USB Serial directo en navegador • Wi-Fi via Bridge";
     discBtn.classList.add("hidden");
+    discBtnTop?.classList.add("hidden");
+    if (toggleLbl) toggleLbl.innerText = "🔌 Conectar";
     connectBtns.classList.remove("hidden");
   } else {
     const labels = {
-      ble: ["Bluetooth BLE", "bg-sky-500/20 text-sky-300 border-sky-500/40", "bg-sky-400"],
-      serial: ["USB / Serial", "bg-indigo-500/20 text-indigo-300 border-indigo-500/40", "bg-indigo-400"],
-      wifi: ["Wi-Fi Bridge", "bg-emerald-500/20 text-emerald-300 border-emerald-500/40", "bg-emerald-400"],
-      demo: ["Simulador Demo", "bg-amber-500/20 text-amber-300 border-amber-500/40", "bg-amber-400"],
+      ble: ["BLE", "bg-sky-500/20 text-sky-300 border-sky-500/40", "bg-sky-400"],
+      serial: ["Serial", "bg-indigo-500/20 text-indigo-300 border-indigo-500/40", "bg-indigo-400"],
+      wifi: ["Wi-Fi", "bg-emerald-500/20 text-emerald-300 border-emerald-500/40", "bg-emerald-400"],
+      demo: ["Demo", "bg-amber-500/20 text-amber-300 border-amber-500/40", "bg-amber-400"],
     };
     const [label, cls, dotCls] = labels[transportType];
-    badge.className = `inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${cls}`;
-    dot.className = `w-2 h-2 rounded-full ${dotCls} pulse-dot`;
+    badge.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold border shrink-0 ${cls}`;
+    dot.className = `w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full ${dotCls} pulse-dot`;
     txt.innerText = label;
     sub.innerText = `${activeTransport?.adapterVersion || "ELM327"} • ${activeTransport?.protocol || ""}`;
     discBtn.classList.remove("hidden");
+    discBtnTop?.classList.remove("hidden");
+    if (toggleLbl) toggleLbl.innerText = "⚙️ Opciones";
     connectBtns.classList.add("hidden");
   }
 }
@@ -405,7 +431,6 @@ function startPolling() {
       if (activeTransport.batteryVoltage) {
         const vStr = `${Number(activeTransport.batteryVoltage).toFixed(1)} V`;
         document.getElementById("batBadge").innerText = vStr;
-        document.getElementById("batBadgeMob").innerText = vStr;
       }
       document.getElementById("pollBadge").innerText = `${activeTransport.lastPollMs || "--"} ms`;
 
@@ -522,8 +547,8 @@ function switchMainTab(tab) {
     document.getElementById(`tab_${t}`).classList.toggle("hidden", t !== tab);
     const btn = document.getElementById(`nav_${t}`);
     btn.className = t === tab
-      ? "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow"
-      : "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60";
+      ? "px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow"
+      : "px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60";
   });
   if (tab === "custom_views") renderActiveCustomView();
 }

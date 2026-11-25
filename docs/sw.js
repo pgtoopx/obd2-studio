@@ -1,4 +1,4 @@
-const CACHE_NAME = "obd2-studio-v2";
+const CACHE_NAME = "obd2-studio-v3";
 const ASSETS = [
   "./",
   "./index.html",
