@@ -1,0 +1,18 @@
+{
+  "name": "OBD2 Studio — Universal Vehicle Diagnostics",
+  "short_name": "OBD2 Studio",
+  "description": "Real-time OBD-II diagnostics via Web Bluetooth BLE, Web Serial USB/COM, and Wi-Fi Bridge.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#090d16",
+  "theme_color": "#090d16",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

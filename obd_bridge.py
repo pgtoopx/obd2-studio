@@ -6,6 +6,8 @@ Thread-safe para backend web en tiempo real.
 import csv
 import math
 import os
+import platform
+import shutil
 import socket
 import subprocess
 import threading
@@ -27,7 +29,7 @@ LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 
 
 def get_wifi_status():
-    """Consulta estado actual de Wi-Fi en Windows y redes visibles."""
+    """Consulta estado actual de Wi-Fi en Windows (netsh) o Linux (nmcli/iwgetid)."""
     info = {
         "connected": False,
         "ssid": None,
@@ -35,66 +37,118 @@ def get_wifi_status():
         "ip": None,
         "vlink_visible": False,
         "networks": [],
+        "os": platform.system(),
     }
-    try:
-        out = subprocess.check_output(
-            ["netsh", "wlan", "show", "interfaces"],
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=4,
-        )
-        for line in out.splitlines():
-            low = line.lower()
-            if ":" not in line:
-                continue
-            k, v = [p.strip() for p in line.split(":", 1)]
-            k_low = k.lower()
-            if k_low == "estado" or k_low == "state":
-                info["connected"] = "conectado" in v.lower() or v.lower() == "connected"
-            elif k_low == "ssid":
-                info["ssid"] = v
-            elif "señal" in k_low or "signal" in k_low:
-                info["signal"] = v
-    except Exception:
-        pass
+    sys_name = platform.system().lower()
 
-    try:
-        out_net = subprocess.check_output(
-            ["netsh", "wlan", "show", "networks"],
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=4,
-        )
-        for line in out_net.splitlines():
-            if line.strip().startswith("SSID") and ":" in line:
-                ssid = line.split(":", 1)[1].strip()
+    if sys_name == "windows":
+        try:
+            out = subprocess.check_output(
+                ["netsh", "wlan", "show", "interfaces"],
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=4,
+            )
+            for line in out.splitlines():
+                if ":" not in line:
+                    continue
+                k, v = [p.strip() for p in line.split(":", 1)]
+                k_low = k.lower()
+                if k_low in ("estado", "state"):
+                    info["connected"] = "conectado" in v.lower() or v.lower() == "connected"
+                elif k_low == "ssid":
+                    info["ssid"] = v
+                elif "señal" in k_low or "signal" in k_low:
+                    info["signal"] = v
+        except Exception:
+            pass
+
+        try:
+            out_net = subprocess.check_output(
+                ["netsh", "wlan", "show", "networks"],
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=4,
+            )
+            for line in out_net.splitlines():
+                if line.strip().startswith("SSID") and ":" in line:
+                    ssid = line.split(":", 1)[1].strip()
+                    if ssid:
+                        info["networks"].append(ssid)
+                        if ssid.upper() == "V-LINK":
+                            info["vlink_visible"] = True
+        except Exception:
+            pass
+
+    elif sys_name == "linux":
+        if shutil.which("nmcli"):
+            try:
+                out = subprocess.check_output(
+                    ["nmcli", "-t", "-f", "ACTIVE,SSID,SIGNAL", "dev", "wifi"],
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                )
+                for line in out.splitlines():
+                    parts = line.split(":")
+                    if len(parts) >= 3:
+                        active, ssid, signal = parts[0], parts[1], parts[2]
+                        if ssid:
+                            info["networks"].append(ssid)
+                            if ssid.upper() == "V-LINK":
+                                info["vlink_visible"] = True
+                        if active in ("yes", "sí", "*"):
+                            info["connected"] = True
+                            info["ssid"] = ssid
+                            info["signal"] = f"{signal}%"
+            except Exception:
+                pass
+        elif shutil.which("iwgetid"):
+            try:
+                ssid = subprocess.check_output(["iwgetid", "-r"], text=True, timeout=3).strip()
                 if ssid:
-                    info["networks"].append(ssid)
-                    if ssid.upper() == "V-LINK":
-                        info["vlink_visible"] = True
-    except Exception:
-        pass
+                    info["connected"] = True
+                    info["ssid"] = ssid
+            except Exception:
+                pass
 
     return info
 
 
 def connect_wifi_ssid(ssid="V-LINK"):
-    """Solicita a Windows conectar la interfaz Wi-Fi al SSID especificado."""
+    """Conecta la interfaz Wi-Fi al SSID especificado en Windows o Linux."""
+    sys_name = platform.system().lower()
     try:
-        out = subprocess.check_output(
-            ["netsh", "wlan", "connect", f"name={ssid}"],
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=6,
-        )
-        time.sleep(2.0)
-        return True, out.strip()
+        if sys_name == "windows":
+            out = subprocess.check_output(
+                ["netsh", "wlan", "connect", f"name={ssid}"],
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=6,
+            )
+            time.sleep(2.0)
+            return True, out.strip()
+        if sys_name == "linux":
+            if not shutil.which("nmcli"):
+                return False, "nmcli no está instalado. Conéctate manualmente a la red Wi-Fi V-LINK."
+            out = subprocess.check_output(
+                ["nmcli", "dev", "wifi", "connect", ssid],
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+            )
+            return True, out.strip()
+        return False, f"Conexión Wi-Fi automática no implementada en {platform.system()}."
     except subprocess.CalledProcessError as e:
         return False, e.output.strip() if e.output else str(e)
     except Exception as e:

@@ -12,7 +12,7 @@ from obd_bridge import OBDBridge, connect_wifi_ssid, get_wifi_status
 from pid_catalog import CATEGORIES, SENSOR_CATALOG
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+STATIC_DIR = os.path.join(BASE_DIR, "docs")
 VIEWS_FILE = os.path.join(BASE_DIR, "custom_views.json")
 
 bridge = OBDBridge()
@@ -73,6 +73,18 @@ class StudioHandler(SimpleHTTPRequestHandler):
 
     def log_message(self, format, *args):
         pass  # Silenciar logs HTTP ruidosos por cada poll
+
+    def end_headers(self):
+        # Permitir que la PWA en GitHub Pages (HTTPS) hable con el Bridge local en 127.0.0.1
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.end_headers()
 
     def _send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")

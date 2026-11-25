@@ -1,29 +1,43 @@
 # OBD2 Studio
 
-A lightweight, dependency-free Python web application and real-time diagnostic dashboard for **ELM327 Wi-Fi** OBD-II adapters (tested with Vgate iCar 2 on a SsangYong Musso 2.2 e-XDi D22DTR).
+A universal, installable **PWA (Progressive Web App)** and cross-platform Python Wi-Fi bridge for **OBD-II vehicle diagnostics**, real-time sensor monitoring, DTC inspection, and custom dashboard creation.
 
-## Features
+- **Live Static App (GitHub Pages):** [https://pgtoopx.github.io/obd2-studio/](https://pgtoopx.github.io/obd2-studio/)
 
-- **Zero External Dependencies**: Built purely on the Python 3 standard library (`ThreadingHTTPServer`, `socket`, `threading`, `csv`, `json`).
-- **Direct TCP Socket Bridge**: Connects straight to `192.168.0.10:35000` without virtual COM port drivers, plus a one-click Windows `V-LINK` Wi-Fi helper and an offline **Demo Simulator** mode.
-- **Automatic PID Discovery**: Queries `0100`, `0120`, `0140`, `0160`, and `0180` bitmasks to discover supported sensors on the ECU.
-- **Post-Reassembly & Coolant Bleed Monitor**:
-  - Dedicated DTC inspector (Modes `0101` MIL & readiness monitors, `03` Confirmed, `07` Pending, `0A` Permanent, `02` Freeze Frame) with a KOEO (`RPM == 0`) safety guard before clearing codes (`04`).
-  - Real-time thermal monitor for Coolant (`0105` / `0167`), EGR Gas Temp (`016B`), Oil Temp (`015C`), IAT (`010F`), and Charge Air Cooler (`0177`) with threshold alerts.
-  - Intake/boost leak & level checks: MAP (`010B`) vs Baro (`0133`), Turbo Commanded vs Actual (`0170`), VGT Actuator (`0171`), MAF (`0110`), EGR Commanded & Error (`012C` / `012D`), Common Rail Pressure (`0123`), Fuel Level (`012F`), Battery Voltage (`ATRV` / `0142`), and DPF Delta-P (`017A`).
-- **Full Sensor Explorer & CSV Logger**: Sweep all supported PIDs on demand and log live telemetry to `logs/`.
-- **Custom Dashboard Builder**: Create, edit, and save custom viewers combining numerical cards, threshold gauges, and live HTML5 Canvas charts.
+## Transport Compatibility Matrix
+
+| Adapter Type | Works Directly in Browser (GitHub Pages)? | Supported Platforms | Notes |
+| :--- | :---: | :--- | :--- |
+| **Bluetooth BLE (4.0/5.0)** | **Yes** (Web Bluetooth) | Android, Windows, Linux, macOS (Chrome / Edge) | Zero installation. Ideal for Vgate iCar Pro BLE, Veepeak BLE+, OBDLink CX. |
+| **USB / Serial / BT Classic COM** | **Yes** (Web Serial) | Windows, Linux, macOS (Chrome / Edge Desktop) | Works like ESP32 web flashers (`/dev/ttyUSB0`, `/dev/rfcomm0`, `COMx`). |
+| **Wi-Fi ELM327 (`192.168.0.10:35000`)** | Via **Local Bridge** | Windows & Linux (`start_windows.bat` / `start_linux.sh`) | Browsers cannot open raw TCP sockets; the zero-dependency Python bridge relays TCP to HTTP. |
+| **Demo Simulator** | **Yes** (Client-Side JS) | All modern browsers | Simulates a SsangYong Musso 2.2 warming up after intake reassembly & coolant refill. |
 
 ## Quick Start
 
-```bash
+### Option 1: Browser-Only (Zero Install)
+Open **[https://pgtoopx.github.io/obd2-studio/](https://pgtoopx.github.io/obd2-studio/)** in Chrome or Edge, click **Install App** (optional for offline use), and connect directly via **Bluetooth BLE** or **USB / Serial**.
+
+### Option 2: Windows (with Wi-Fi Bridge support)
+Double-click `start_windows.bat` or run:
+```powershell
 python server.py
 ```
+Then open `http://127.0.0.1:8080` (or keep using the GitHub Pages PWA — it will automatically connect to the local bridge at `127.0.0.1:8080`).
 
-Then open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
-
-To run on a different port:
-
+### Option 3: Linux (with Wi-Fi Bridge support)
 ```bash
-OBD_WEB_PORT=8090 python server.py
+chmod +x start_linux.sh
+./start_linux.sh
 ```
+For USB/Serial adapters on Linux, make sure your user is in the `dialout` group (`sudo usermod -aG dialout $USER`).
+
+## Key Capabilities
+
+- **Post-Reassembly & Coolant Bleed Monitor**:
+  - DTC Scanner (Modes `0101`, `03`, `07`, `0A`, `02` Freeze Frame) with KOEO (`RPM == 0`) guard before clearing codes (`04`).
+  - Coolant thermal gauge & live chart (`0105`, `0167`), EGR Gas Temp (`016B`), Oil Temp (`015C`), IAT (`010F`), and Charge Air Cooler (`0177`) with threshold alerts.
+  - Intake/boost leak checks: MAP (`010B`) vs Baro (`0133`), Turbo Commanded vs Actual (`0170`), VGT Actuator (`0171`), MAF (`0110`), EGR Commanded & Error (`012C` / `012D`), Common Rail (`0123`), Fuel Level (`012F`), Battery Voltage (`ATRV` / `0142`), and DPF Delta-P (`017A`).
+- **Full Sensor Explorer**: Auto-discovers supported PIDs (`0100`–`0180`), sweeps all sensors on demand, and logs telemetry to downloadable CSV.
+- **Custom View Builder**: Build and persist custom dashboards with gauges, cards, and real-time Canvas charts.
+- **Offline PWA**: Service Worker caches assets so the app works without internet when connected to an OBD-II Wi-Fi hotspot (`V-LINK`) or out on the road.

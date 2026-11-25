@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+  <meta name="theme-color" content="#090d16" />
+  <title>OBD2 Studio — Diagnóstico Universal</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: #090d16;
+      color: #f1f5f9;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.88);
+      border: 1px solid rgba(51, 65, 85, 0.7);
+      backdrop-filter: blur(8px);
+    }
+    .pulse-dot { animation: pulseGlow 1.8s infinite; }
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.45; transform: scale(0.85); }
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen antialiased pb-12">
+
+  <!-- TOP BAR -->
+  <header class="sticky top-0 z-30 bg-slate-950/95 border-b border-slate-800 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 py-3">
+      <div class="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+        <!-- Identidad + Estado -->
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5">
+            <img src="./icon.svg" alt="OBD2" class="w-9 h-9 rounded-xl border border-sky-500/30" />
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h1 class="text-base sm:text-lg font-extrabold tracking-tight text-white">OBD2 Studio</h1>
+                <span id="connBadge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                  <span id="connDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                  <span id="connText">Desconectado</span>
+                </span>
+                <button id="btnInstallPwa" onclick="installPWA()" class="hidden px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 hover:bg-emerald-500/30">
+                  📲 Instalar App Offline
+                </button>
+              </div>
+              <p id="adapterSubtitle" class="text-[11px] text-slate-400 font-mono">BLE / USB Serial directo en navegador • Wi-Fi via Bridge</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 xl:hidden">
+            <span id="batBadgeMob" class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-emerald-400">-- V</span>
+          </div>
+        </div>
+
+        <!-- Selector Multi-Transporte -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div id="connectButtonsGroup" class="flex flex-wrap items-center gap-1.5">
+            <button onclick="connectMode('ble')" id="btnConnBle" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow flex items-center gap-1" title="Bluetooth Low Energy directo en Android/PC (sin instalar nada)">
+              <span>🔵</span> Bluetooth BLE
+            </button>
+            <button onclick="connectMode('serial')" id="btnConnSerial" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition shadow flex items-center gap-1" title="USB o puerto COM Bluetooth Clásico en Windows/Linux">
+              <span>🔌</span> USB / Serial
+            </button>
+            <select id="inpBaud" class="px-1.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-[11px] font-mono text-slate-300" title="Baudrate para USB/Serial">
+              <option value="38400">38400</option>
+              <option value="115200">115200</option>
+              <option value="9600">9600</option>
+              <option value="230400">230400</option>
+            </select>
+            <button onclick="connectMode('wifi')" id="btnConnWifi" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow flex items-center gap-1" title="Adaptador ELM327 Wi-Fi mediante Bridge local Windows/Linux">
+              <span>📡</span> Wi-Fi Bridge
+            </button>
+            <button onclick="connectMode('demo')" id="btnDemo" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition">
+              🎮 Demo
+            </button>
+          </div>
+
+          <button onclick="disconnectOBD()" id="btnDisconnect" class="hidden px-3 py-1.5 rounded-lg text-xs font-bold bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 transition">
+            ⏹ Desconectar
+          </button>
+
+          <button onclick="connectWifiVLink()" id="btnWifi" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1">
+            <span>📶</span> <span id="wifiBtnLabel">V-LINK</span>
+          </button>
+
+          <button onclick="toggleLogging()" id="btnLog" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 flex items-center gap-1.5">
+            <span id="logDot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+            <span id="logLabel">Grabar CSV</span>
+          </button>
+
+          <div class="hidden xl:flex items-center gap-2 ml-1 text-xs font-mono">
+            <span id="batBadge" class="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-emerald-400 font-bold">-- V</span>
+            <span id="pollBadge" class="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400">-- ms</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Configuración Wi-Fi Bridge (compacta y colapsable si no se usa) -->
+      <div id="bridgeHelpBox" class="hidden mt-2.5 p-3 rounded-xl bg-slate-900/90 border border-slate-700 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div class="text-slate-300">
+          <strong>Nota sobre Wi-Fi ELM327:</strong> Los navegadores no abren sockets TCP crudos por seguridad. Para usar un adaptador Wi-Fi desde esta web, ejecutá <code class="text-emerald-300">start_windows.bat</code> (Windows) o <code class="text-emerald-300">./start_linux.sh</code> (Linux).
+        </div>
+        <div class="flex items-center gap-1.5 font-mono shrink-0">
+          <input id="inpIp" type="text" value="192.168.0.10" class="w-28 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+          <input id="inpPort" type="number" value="35000" class="w-16 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+          <input id="inpBridgeUrl" type="text" value="http://127.0.0.1:8080" class="w-36 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-200" />
+        </div>
+      </div>
+
+      <div id="connAlert" class="hidden mt-2.5 px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2"></div>
+
+      <!-- Tabs -->
+      <nav class="flex items-center gap-1.5 mt-3 overflow-x-auto pb-0.5">
+        <button onclick="switchMainTab('post_assembly')" id="nav_post_assembly" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition bg-sky-500 text-slate-950 shadow">
+          🔧 Visor Post-Armado & Fallas
+        </button>
+        <button onclick="switchMainTab('all_sensors')" id="nav_all_sensors" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          📊 Todos los Sensores (<span id="sensorCountBadge">38</span>)
+        </button>
+        <button onclick="switchMainTab('custom_views')" id="nav_custom_views" class="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          🎛️ Visores Custom (<span id="viewsCountBadge">2</span>)
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-3 sm:px-6 pt-5 space-y-6">
+
+    <!-- TAB 1: VISOR PRINCIPAL POST-ARMADO -->
+    <section id="tab_post_assembly" class="space-y-6">
+      <!-- Errores DTC -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🚨</span> Diagnóstico de Errores (DTCs) & Monitores ECU
+            </h2>
+            <p class="text-xs text-slate-400">Verifica sensores desconectados, fugas o códigos tras armar admisión y rellenar coolant.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="scanDTCs()" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition shadow">
+              🔍 Escanear Fallas Ahora
+            </button>
+            <button onclick="clearDTCs(false)" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 transition">
+              🧹 Borrar Fallas (KOEO)
+            </button>
+          </div>
+        </div>
+        <div id="dtcContainer" class="mt-4">
+          <div class="text-xs text-slate-400 bg-slate-950/60 border border-slate-800 rounded-xl p-4 text-center">
+            Elegí tu método de conexión arriba (Bluetooth BLE, USB Serial, Wi-Fi Bridge o Demo) y tocá <strong>"Escanear Fallas Ahora"</strong>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Control Térmico y Coolant -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl border-t-2 border-t-amber-500/60">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🌡️</span> Control Térmico & Purgado de Coolant
+            </h2>
+            <p class="text-xs text-slate-400">Vigila el refrigerante (<span class="text-amber-300">termostato ~82-88°C</span>) y temperatura EGR para detectar bolsas de aire.</p>
+          </div>
+          <div id="thermalPhasePill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            Esperando datos...
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div id="coolantMainCard" class="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between">
+            <div class="flex justify-between items-start">
+              <div>
+                <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider">Temp. Refrigerante (ECT)</div>
+                <div class="text-[11px] text-slate-500 font-mono">PID 0105 • Alerta &ge; 96°C</div>
+              </div>
+              <span id="coolantStatusTag" class="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-800 text-slate-400">--</span>
+            </div>
+            <div class="my-4 flex items-baseline gap-2">
+              <span id="val_0105" class="text-5xl font-black font-mono text-white">--</span>
+              <span class="text-xl text-slate-400 font-bold">°C</span>
+            </div>
+            <div class="space-y-1.5">
+              <div class="w-full h-3 bg-slate-800 rounded-full overflow-hidden flex">
+                <div id="coolantBar" class="h-full bg-sky-400 transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <div class="flex justify-between text-[10px] font-mono text-slate-500">
+                <span>0°C</span>
+                <span class="text-emerald-400">85°C (Óptimo)</span>
+                <span class="text-amber-400">96°C</span>
+                <span class="text-red-400">110°C</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="lg:col-span-2 bg-slate-950/80 border border-slate-800 rounded-2xl p-4 flex flex-col">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <span class="text-xs font-bold text-slate-300">Evolución Térmica en Tiempo Real</span>
+              <div class="flex items-center gap-3 text-[11px]">
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span> Coolant (0105)</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Gas EGR (016B)</span>
+                <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Aceite (015C)</span>
+              </div>
+            </div>
+            <div class="relative flex-1 min-h-[160px]">
+              <canvas id="thermalChart" class="w-full h-full"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div id="thermalMiniGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5 mt-4"></div>
+      </div>
+
+      <!-- Admisión, Turbo, EGR y Niveles -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>🌀</span> Hermeticidad de Admisión, Turbo, EGR y Niveles
+            </h2>
+            <p class="text-xs text-slate-400">Comprueba fugas en mangueras/juntas, respuesta de EGR, voltaje de carga y combustible.</p>
+          </div>
+          <div id="boostDeltaPill" class="self-start sm:self-auto px-3 py-1 rounded-full text-xs font-mono font-bold bg-slate-800 text-slate-300 border border-slate-700">
+            Boost Neto: -- bar
+          </div>
+        </div>
+        <div id="intakeLevelsGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3"></div>
+      </div>
+
+      <!-- Checklist -->
+      <div class="glass-card rounded-2xl p-4 sm:p-6 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+              <span>✅</span> Checklist Post-Armado & Purgado
+            </h2>
+            <p class="text-xs text-slate-400">Guardado localmente en el navegador para usar sin internet en la cochera.</p>
+          </div>
+          <button onclick="resetChecklist()" class="text-xs text-slate-400 hover:text-white underline">Reiniciar</button>
+        </div>
+        <div id="checklistGrid" class="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs sm:text-sm"></div>
+      </div>
+    </section>
+
+    <!-- TAB 2: TODOS LOS SENSORES -->
+    <section id="tab_all_sensors" class="hidden space-y-4">
+      <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">Explorador Completo de Sensores OBD-II</h2>
+          <p class="text-xs text-slate-400">Consulta todos los PIDs disponibles en la ECU o agrégalos a tus visores personalizados.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <input id="sensorSearch" oninput="renderAllSensors()" type="text" placeholder="Buscar sensor..." class="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-sky-500 w-52" />
+          <button onclick="scanAllSensors()" id="btnScanAll" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950 transition">
+            ⚡ Barrido Completo (Leer Todos)
+          </button>
+        </div>
+      </div>
+      <div id="categoryPills" class="flex flex-wrap gap-2"></div>
+      <div id="allSensorsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+    </section>
+
+    <!-- TAB 3: VISORES CUSTOM -->
+    <section id="tab_custom_views" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">🎛️ Mis Visores Personalizados</h2>
+          <p class="text-xs text-slate-400">Arma tableros combinando tarjetas numéricas, barras y gráficas en vivo.</p>
+        </div>
+        <button onclick="openViewBuilder(null)" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow">
+          + Nuevo Visor Custom
+        </button>
+      </div>
+      <div id="customViewTabs" class="flex flex-wrap items-center gap-2"></div>
+      <div id="activeCustomViewHeader" class="hidden glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h3 id="cvTitle" class="text-lg font-bold text-white"></h3>
+          <p id="cvDesc" class="text-xs text-slate-400"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="editActiveCustomView()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">✏️ Editar</button>
+          <button onclick="deleteActiveCustomView()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30">🗑️ Eliminar</button>
+        </div>
+      </div>
+      <div id="customViewWidgets" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+    </section>
+  </main>
+
+  <!-- MODAL CONSTRUCTOR -->
+  <div id="builderModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h3 id="builderModalTitle" class="text-base font-bold text-white">Crear Visor Custom</h3>
+        <button onclick="closeViewBuilder()" class="text-slate-400 hover:text-white text-xl leading-none">&times;</button>
+      </div>
+      <div class="p-5 overflow-y-auto space-y-4 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-slate-400 mb-1 font-semibold">Ícono</label>
+            <select id="vbIcon" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+              <option value="🌡️">🌡️ Térmico</option>
+              <option value="🌀">🌀 Turbo</option>
+              <option value="🚗">🚗 Ruta</option>
+              <option value="🛡️">🛡️ DPF</option>
+              <option value="🔋">🔋 Eléctrico</option>
+              <option value="⚙️">⚙️ Motor</option>
+            </select>
+          </div>
+          <div class="sm:col-span-3">
+            <label class="block text-slate-400 mb-1 font-semibold">Nombre del Visor</label>
+            <input id="vbName" type="text" placeholder="Ej: Prueba en Carretera Turbo + Coolant" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+          </div>
+        </div>
+        <div>
+          <label class="block text-slate-400 mb-1 font-semibold">Descripción</label>
+          <input id="vbDesc" type="text" placeholder="Ej: Monitoreo durante prueba dinámica" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white" />
+        </div>
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-slate-300 font-bold">Sensores y Widget</label>
+            <input id="vbFilter" oninput="renderBuilderSensorList()" type="text" placeholder="Filtrar..." class="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-white w-36" />
+          </div>
+          <div id="vbSensorList" class="space-y-1.5 max-h-64 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+      <div class="px-5 py-3.5 border-t border-slate-800 flex justify-end gap-2">
+        <button onclick="closeViewBuilder()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300">Cancelar</button>
+        <button onclick="saveViewFromBuilder()" class="px-4 py-2 rounded-xl text-xs font-bold bg-emerald-500 text-slate-950">Guardar Visor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL AGREGAR RÁPIDO -->
+  <div id="quickAddModal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-md p-5 space-y-4 shadow-2xl">
+      <div class="flex justify-between items-center">
+        <h3 class="text-sm font-bold text-white">Agregar Sensor a Visor Custom</h3>
+        <button onclick="document.getElementById('quickAddModal').classList.add('hidden')" class="text-slate-400 hover:text-white">&times;</button>
+      </div>
+      <div id="quickAddSensorName" class="text-xs text-sky-400 font-mono"></div>
+      <div class="space-y-2 text-xs">
+        <label class="block text-slate-400">Visor destino:</label>
+        <select id="quickAddViewSelect" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white"></select>
+        <label class="block text-slate-400 mt-2">Tipo de widget:</label>
+        <select id="quickAddWidgetType" class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white">
+          <option value="gauge">Barra / Gauge con alertas</option>
+          <option value="chart">Gráfica en Tiempo Real</option>
+          <option value="card">Tarjeta Numérica Simple</option>
+        </select>
+      </div>
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="document.getElementById('quickAddModal').classList.add('hidden')" class="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-300">Cancelar</button>
+        <button onclick="confirmQuickAdd()" class="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950">Agregar</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./js/obd-core.js"></script>
+  <script src="./js/transports.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>
