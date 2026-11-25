@@ -56,6 +56,10 @@
 
         <!-- Acciones compactas siempre a mano -->
         <div class="flex items-center gap-1.5 shrink-0">
+          <button onclick="toggleLogging()" id="recLivePill" class="hidden px-2 py-1 rounded-lg bg-red-500/20 border border-red-500/50 text-[11px] font-mono text-red-300 font-bold flex items-center gap-1" title="Detener y guardar grabación">
+            <span class="w-2 h-2 rounded-full bg-red-500 pulse-dot"></span>
+            <span id="recLiveCount">0</span>
+          </button>
           <span id="batBadge" class="px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[11px] sm:text-xs font-mono text-emerald-400 font-bold">-- V</span>
           <span id="pollBadge" class="hidden sm:inline-block px-2 py-1 rounded-lg bg-slate-900 border border-slate-800 text-xs font-mono text-slate-400">-- ms</span>
 
@@ -188,6 +192,9 @@
         </button>
         <button onclick="switchMainTab('terminal')" id="nav_terminal" class="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
           💻 Terminal
+        </button>
+        <button onclick="switchMainTab('recordings')" id="nav_recordings" class="px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60">
+          📁 Logs (<span id="recCountBadge">0</span>)
         </button>
       </nav>
     </div>
@@ -406,6 +413,55 @@
         </div>
       </div>
     </section>
+
+    <!-- TAB 5: GRABACIONES GUARDADAS EN NAVEGADOR (INDEXEDDB) -->
+    <section id="tab_recordings" class="hidden space-y-5">
+      <div class="glass-card rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-white">📁 Grabaciones Guardadas en el Navegador</h2>
+          <p class="text-xs text-slate-400">Cada grabación se guarda automáticamente en IndexedDB mientras grabas (persiste offline y tras cerrar el navegador).</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="clearAllStoredRecordings()" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30">
+            🗑️ Borrar Todas
+          </button>
+        </div>
+      </div>
+
+      <!-- Visor / Reproductor de Grabación Seleccionada -->
+      <div id="recordingViewerPanel" class="hidden glass-card rounded-2xl p-4 sm:p-6 space-y-4 border-t-2 border-t-sky-500/60">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 id="rvTitle" class="text-base font-bold text-white"></h3>
+            <p id="rvMeta" class="text-xs text-slate-400 font-mono"></p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="downloadActiveRecordingCsv()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-500 text-slate-950">⬇️ CSV</button>
+            <button onclick="downloadActiveRecordingJson()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 text-slate-200 border border-slate-700">⬇️ JSON</button>
+            <button onclick="document.getElementById('recordingViewerPanel').classList.add('hidden')" class="px-2.5 py-1.5 rounded-lg text-xs bg-slate-800 text-slate-400 hover:text-white">&times;</button>
+          </div>
+        </div>
+
+        <div id="rvStatsGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-center"></div>
+
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-2 text-[11px]">
+            <span class="font-bold text-slate-300">Gráfica de la Sesión Grabada</span>
+            <div class="flex items-center gap-3">
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span> Coolant (°C)</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-400 inline-block"></span> MAP (kPa)</span>
+              <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> RPM (/20)</span>
+            </div>
+          </div>
+          <div class="h-52 w-full">
+            <canvas id="rvChart" class="w-full h-full"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lista de sesiones -->
+      <div id="recordingsList" class="space-y-3"></div>
+    </section>
   </main>
 
   <!-- MODAL CONSTRUCTOR -->
@@ -478,6 +534,7 @@
   </div>
 
   <script src="./js/obd-core.js"></script>
+  <script src="./js/storage.js"></script>
   <script src="./js/transports.js"></script>
   <script src="./js/app.js"></script>
 </body>

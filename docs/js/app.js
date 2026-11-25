@@ -80,9 +80,10 @@ let headerDrawerOpen = false;
 let termHistory = [];
 let termHistoryIdx = -1;
 
-// Logger CSV
+// Logger persistente en navegador (IndexedDB)
 let isRecordingCsv = false;
-let csvRows = [];
+let activeRecording = null;
+let viewedRecording = null;
 
 async function initApp() {
   registerPWA();
@@ -95,6 +96,15 @@ async function initApp() {
   // En desktop (>1024px) el drawer puede iniciar abierto; en mobile arranca compacto
   toggleHeaderDrawer(window.innerWidth >= 1024);
   checkLocalBridgeAvailability();
+  await refreshStoredRecordingsList();
+
+  const flushActive = () => {
+    if (isRecordingCsv && activeRecording) {
+      OBDStorage.saveRecording(activeRecording);
+    }
+  };
+  document.addEventListener("visibilitychange", () => { if (document.hidden) flushActive(); });
+  window.addEventListener("pagehide", flushActive);
 }
 
 function toggleHeaderDrawer(forceState = null) {
@@ -462,41 +472,182 @@ function stopPolling() {
 }
 
 // =========================================================
-// GRABADOR CSV + EXPORTAR REPORTE HTML
+// GRABADOR PERSISTENTE EN NAVEGADOR (INDEXEDDB) + REPORTE HTML
 // =========================================================
-function toggleLogging() {
+async function toggleLogging() {
   const dot = document.getElementById("logDot");
   const lbl = document.getElementById("logLabel");
+  const pill = document.getElementById("recLivePill");
+  const cnt = document.getElementById("recLiveCount");
+
   if (!isRecordingCsv) {
     isRecordingCsv = true;
-    csvRows = [];
+    activeRecording = {
+      id: "rec_" + Date.now(),
+      startedAt: new Date().toISOString(),
+      endedAt: null,
+      transport: transportType,
+      vin: vehicleInfo?.vin || "--",
+      rows: [],
+    };
+    await OBDStorage.saveRecording(activeRecording);
     dot.className = "w-2 h-2 rounded-full bg-red-500 pulse-dot";
-    lbl.innerText = "Bajar CSV";
-    showConnAlert("Grabando telemetría en memoria del navegador...", "info");
+    lbl.innerText = "Guardar";
+    pill?.classList.remove("hidden");
+    if (cnt) cnt.innerText = "0";
+    showConnAlert("Grabando en almacenamiento del navegador (IndexedDB)...", "info");
+    await refreshStoredRecordingsList();
   } else {
     isRecordingCsv = false;
     dot.className = "w-2 h-2 rounded-full bg-slate-500";
     lbl.innerText = "CSV";
-    downloadCsv();
+    pill?.classList.add("hidden");
+    if (activeRecording) {
+      activeRecording.endedAt = new Date().toISOString();
+      await OBDStorage.saveRecording(activeRecording);
+      const total = activeRecording.rows.length;
+      activeRecording = null;
+      await refreshStoredRecordingsList();
+      showConnAlert(`Grabación guardada en 📁 Logs (${total} muestras).`, "success");
+    }
   }
 }
 
 function captureCsvRow() {
+  if (!activeRecording) return;
   const latest = activeTransport?.latest || {};
   const row = { Timestamp: new Date().toISOString() };
   OBDCore.SENSOR_CATALOG.forEach((s) => {
     row[s.id] = latest[s.id] ? latest[s.id].value : "";
   });
-  csvRows.push(row);
+  activeRecording.rows.push(row);
+  const n = activeRecording.rows.length;
+  const cnt = document.getElementById("recLiveCount");
+  if (cnt) cnt.innerText = String(n);
+  if (n % 5 === 0) {
+    OBDStorage.saveRecording(activeRecording);
+  }
 }
 
-function downloadCsv() {
-  if (!csvRows.length) return showConnAlert("No se grabaron muestras para exportar.", "info");
-  const headers = Object.keys(csvRows[0]);
+function rowsToCsv(rows) {
+  if (!rows || !rows.length) return "";
+  const headers = Object.keys(rows[0]);
   const lines = [headers.join(",")];
-  for (const r of csvRows) lines.push(headers.map((h) => r[h]).join(","));
-  triggerDownload(`obd2_musso_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.csv`, lines.join("\n"), "text/csv;charset=utf-8;");
-  showConnAlert(`CSV descargado (${csvRows.length} muestras).`, "success");
+  for (const r of rows) lines.push(headers.map((h) => (r[h] !== undefined ? r[h] : "")).join(","));
+  return lines.join("\n");
+}
+
+async function refreshStoredRecordingsList() {
+  if (!window.OBDStorage) return;
+  const list = await OBDStorage.listRecordings();
+  const badge = document.getElementById("recCountBadge");
+  if (badge) badge.innerText = String(list.length);
+  const container = document.getElementById("recordingsList");
+  if (!container) return;
+
+  if (!list.length) {
+    container.innerHTML = `<div class="glass-card rounded-2xl p-6 text-center text-xs text-slate-400">No hay grabaciones guardadas aún. Presioná <strong>CSV</strong> en Opciones para grabar una sesión en el navegador.</div>`;
+    return;
+  }
+
+  container.innerHTML = list.map((rec) => {
+    const rows = rec.rows || [];
+    const dt = rec.startedAt ? new Date(rec.startedAt).toLocaleString() : rec.id;
+    const isCurrent = activeRecording && activeRecording.id === rec.id;
+    const maxCool = rows.reduce((m, r) => (typeof r["0105"] === "number" && r["0105"] > m ? r["0105"] : m), -99);
+    const maxRpm = rows.reduce((m, r) => (typeof r["010C"] === "number" && r["010C"] > m ? r["010C"] : m), 0);
+    return `
+      <div class="glass-card rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-bold text-white">${dt}</span>
+            ${isCurrent ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-300 border border-red-500/40">GRABANDO</span>` : ""}
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-mono bg-slate-800 text-sky-300">${(rec.transport || "obd").toUpperCase()}</span>
+          </div>
+          <div class="text-xs text-slate-400 font-mono mt-1">
+            Muestras: <strong class="text-white">${rows.length}</strong> • VIN: ${rec.vin || "--"} • Máx ECT: ${maxCool > -99 ? maxCool + "°C" : "--"} • Máx RPM: ${maxRpm || "--"}
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5">
+          <button onclick="viewStoredRecording('${rec.id}')" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-500 hover:bg-sky-400 text-slate-950">👁️ Ver Gráfica</button>
+          <button onclick="downloadStoredCsv('${rec.id}')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30">⬇️ CSV</button>
+          <button onclick="downloadStoredJson('${rec.id}')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">⬇️ JSON</button>
+          <button onclick="deleteStoredRecording('${rec.id}')" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30">🗑️</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+async function viewStoredRecording(id) {
+  const rec = await OBDStorage.getRecording(id);
+  if (!rec) return;
+  viewedRecording = rec;
+  const rows = rec.rows || [];
+  document.getElementById("recordingViewerPanel").classList.remove("hidden");
+  document.getElementById("rvTitle").innerText = `Sesión: ${new Date(rec.startedAt).toLocaleString()}`;
+  document.getElementById("rvMeta").innerText = `${rows.length} muestras • Transporte: ${(rec.transport || "").toUpperCase()} • VIN: ${rec.vin || "--"}`;
+
+  const calcStats = (pid, fn) => {
+    const vals = rows.map((r) => r[pid]).filter((v) => typeof v === "number" && !Number.isNaN(v));
+    return vals.length ? fn(vals) : "--";
+  };
+  const maxEct = calcStats("0105", (a) => Math.max(...a) + " °C");
+  const maxMap = calcStats("010B", (a) => Math.max(...a) + " kPa");
+  const maxRpm = calcStats("010C", (a) => Math.max(...a) + " RPM");
+  const minBat = calcStats("ATRV", (a) => Math.min(...a) + " V");
+
+  document.getElementById("rvStatsGrid").innerHTML = `
+    <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"><div class="text-[10px] text-slate-400">Coolant Máx</div><div class="text-base font-bold font-mono text-sky-400">${maxEct}</div></div>
+    <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"><div class="text-[10px] text-slate-400">MAP Máx</div><div class="text-base font-bold font-mono text-purple-400">${maxMap}</div></div>
+    <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"><div class="text-[10px] text-slate-400">RPM Máx</div><div class="text-base font-bold font-mono text-emerald-400">${maxRpm}</div></div>
+    <div class="bg-slate-950/70 border border-slate-800 rounded-xl p-2.5"><div class="text-[10px] text-slate-400">Batería Mín</div><div class="text-base font-bold font-mono text-amber-300">${minBat}</div></div>
+  `;
+
+  const recHist = {
+    "0105": rows.map((r) => ({ t: "", v: r["0105"] })).filter((p) => typeof p.v === "number"),
+    "010B": rows.map((r) => ({ t: "", v: r["010B"] })).filter((p) => typeof p.v === "number"),
+    "010C_scaled": rows.map((r) => ({ t: "", v: typeof r["010C"] === "number" ? Math.round(r["010C"] / 20) : null })).filter((p) => typeof p.v === "number"),
+  };
+  drawMultiSeriesChart(document.getElementById("rvChart"), recHist, [
+    { id: "0105", color: "#38bdf8" },
+    { id: "010B", color: "#c084fc" },
+    { id: "010C_scaled", color: "#34d399" },
+  ]);
+}
+
+async function downloadStoredCsv(id) {
+  const rec = await OBDStorage.getRecording(id);
+  if (!rec || !rec.rows?.length) return showConnAlert("La grabación no tiene muestras.", "info");
+  const stamp = (rec.startedAt || id).replace(/[:.]/g, "-").slice(0, 19);
+  triggerDownload(`obd2_log_${stamp}.csv`, rowsToCsv(rec.rows), "text/csv;charset=utf-8;");
+}
+
+async function downloadStoredJson(id) {
+  const rec = await OBDStorage.getRecording(id);
+  if (!rec) return;
+  const stamp = (rec.startedAt || id).replace(/[:.]/g, "-").slice(0, 19);
+  triggerDownload(`obd2_log_${stamp}.json`, JSON.stringify(rec, null, 2), "application/json");
+}
+
+function downloadActiveRecordingCsv() { if (viewedRecording) downloadStoredCsv(viewedRecording.id); }
+function downloadActiveRecordingJson() { if (viewedRecording) downloadStoredJson(viewedRecording.id); }
+
+async function deleteStoredRecording(id) {
+  if (!confirm("¿Eliminar esta grabación del navegador?")) return;
+  await OBDStorage.deleteRecording(id);
+  if (viewedRecording && viewedRecording.id === id) {
+    viewedRecording = null;
+    document.getElementById("recordingViewerPanel").classList.add("hidden");
+  }
+  await refreshStoredRecordingsList();
+}
+
+async function clearAllStoredRecordings() {
+  if (!confirm("¿Eliminar TODAS las grabaciones almacenadas en el navegador?")) return;
+  await OBDStorage.clearAllRecordings();
+  viewedRecording = null;
+  document.getElementById("recordingViewerPanel").classList.add("hidden");
+  await refreshStoredRecordingsList();
 }
 
 function exportDiagnosticReport() {
@@ -543,7 +694,7 @@ function triggerDownload(filename, content, mime) {
 // =========================================================
 function switchMainTab(tab) {
   activeTab = tab;
-  ["post_assembly", "all_sensors", "custom_views", "terminal"].forEach((t) => {
+  ["post_assembly", "all_sensors", "custom_views", "terminal", "recordings"].forEach((t) => {
     document.getElementById(`tab_${t}`).classList.toggle("hidden", t !== tab);
     const btn = document.getElementById(`nav_${t}`);
     btn.className = t === tab
@@ -551,6 +702,7 @@ function switchMainTab(tab) {
       : "px-2.5 sm:px-3.5 py-1.5 rounded-xl text-[11px] sm:text-sm font-bold whitespace-nowrap transition text-slate-300 hover:bg-slate-800 bg-slate-900/60";
   });
   if (tab === "custom_views") renderActiveCustomView();
+  if (tab === "recordings") refreshStoredRecordingsList();
 }
 
 // =========================================================

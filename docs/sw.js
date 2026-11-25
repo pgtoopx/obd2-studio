@@ -1,4 +1,4 @@
-const CACHE_NAME = "obd2-studio-v3";
+const CACHE_NAME = "obd2-studio-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,6 +6,7 @@ const ASSETS = [
   "./icon.svg",
   "./downloads/obd2-wifi-bridge.py",
   "./js/obd-core.js",
+  "./js/storage.js",
   "./js/transports.js",
   "./js/app.js",
   "https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"
